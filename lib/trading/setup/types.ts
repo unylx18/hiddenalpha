@@ -15,11 +15,17 @@ export type TradeSetup = {
 
   takeProfitPrice: number;
 
+  takeProfit1Price: number;
+  takeProfit2Price: number;
+
   stopDistance: number;
 
   stopDistancePercent: number;
 
   riskRewardRatio: number;
+
+  riskRewardRatioTP1: number;
+  riskRewardRatioTP2: number;
 
   atr: number;
 

@@ -4,6 +4,7 @@ import { evaluateSignalQuality } from "@/lib/trading/signal/quality";
 import { TradingSignal } from "@/lib/trading/signal/types";
 import { getMultiTimeframeAnalysis } from "@/lib/trading/mtf/service";
 import { finalizeSignal } from "@/lib/trading/signal/final-decision";
+import { calculateTradeSetup } from "@/lib/trading/setup/calculator";
 
 export async function generateSignal(
   symbol: string,
@@ -39,7 +40,13 @@ export async function generateSignal(
     mtf
   );
 
-  if (!finalDecision.approved) {
+  if (
+    !finalDecision.approved ||
+    (
+      finalDecision.direction !== "LONG" &&
+      finalDecision.direction !== "SHORT"
+    )
+  ) {
     return {
       ...baseSignal,
       direction: "WAIT",
@@ -61,9 +68,17 @@ export async function generateSignal(
     };
   }
 
+  const setup = calculateTradeSetup(
+    context,
+    finalDecision.direction
+  );
+
   return {
     ...baseSignal,
-    confidence: finalDecision.confidence,
+
+    confidence:
+      finalDecision.confidence,
+
     reasons: [
       ...baseSignal.reasons,
       {
@@ -76,5 +91,26 @@ export async function generateSignal(
           "Signal passed final confirmation",
       },
     ],
+
+    entryPrice:
+      setup.entryPrice,
+
+    stopLossPrice:
+      setup.stopLossPrice,
+
+    takeProfitPrice:
+      setup.takeProfitPrice,
+
+    takeProfit1Price:
+      setup.takeProfit1Price,
+
+    takeProfit2Price:
+      setup.takeProfit2Price,
+
+    riskRewardRatioTP1:
+      setup.riskRewardRatioTP1,
+
+    riskRewardRatioTP2:
+      setup.riskRewardRatioTP2,
   };
 }

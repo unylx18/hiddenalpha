@@ -1,76 +1,78 @@
+import { NextRequest, NextResponse } from "next/server";
 import {
   generateTradePlan,
-} from "@/lib/trading/plan/service";
+} from "@/lib/trading/plan/trade-plan-service";
 
-export async function POST(
-  request: Request
+export async function GET(
+  request: NextRequest
 ) {
   try {
-    const body = await request.json();
+    const searchParams =
+      request.nextUrl.searchParams;
 
     const symbol =
-      body.symbol ?? "BTCUSDT";
+      searchParams.get("symbol") ?? "BTCUSDT";
 
     const timeframe =
-      body.timeframe ?? "1m";
+      searchParams.get("timeframe") ?? "1m";
 
-    const accountBalance =
-      Number(body.accountBalance);
+    const accountBalance = Number(
+      searchParams.get("accountBalance") ?? "10000"
+    );
 
-    const riskPercent =
-      Number(body.riskPercent);
+    const riskPercent = Number(
+      searchParams.get("riskPercent") ?? "1"
+    );
 
-    const leverage =
-      Number(body.leverage ?? 1);
+    const leverage = Number(
+      searchParams.get("leverage") ?? "1"
+    );
 
     if (
       !Number.isFinite(accountBalance) ||
-      !Number.isFinite(riskPercent)
+      accountBalance <= 0
     ) {
-      return Response.json(
+      return NextResponse.json(
         {
-          success: false,
           error:
-            "accountBalance and riskPercent must be valid numbers",
+            "accountBalance must be greater than 0",
         },
         { status: 400 }
       );
     }
 
-    const result =
+    if (
+      !Number.isFinite(riskPercent) ||
+      riskPercent <= 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "riskPercent must be greater than 0",
+        },
+        { status: 400 }
+      );
+    }
+
+    const tradePlan =
       await generateTradePlan({
         symbol,
         timeframe,
-
         accountBalance,
         riskPercent,
-
         leverage,
-
-        feePercent:
-          body.feePercent !== undefined
-            ? Number(body.feePercent)
-            : undefined,
-
-        slippagePercent:
-          body.slippagePercent !== undefined
-            ? Number(body.slippagePercent)
-            : undefined,
       });
 
-    return Response.json({
-      success: true,
-      provider: "bybit",
-      plan: result,
-    });
+    return NextResponse.json(
+      tradePlan
+    );
   } catch (error) {
-    return Response.json(
+    return NextResponse.json(
       {
-        success: false,
         error:
           error instanceof Error
             ? error.message
-            : String(error),
+            : "Failed to generate trade plan",
       },
       { status: 400 }
     );

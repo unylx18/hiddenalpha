@@ -11,6 +11,7 @@ export type AlphaScoreResult = {
     trend: number;
     momentum: number;
     volume: number;
+    structure: number;
     volatility: number;
   };
   reasons: string[];
@@ -30,6 +31,36 @@ function directionToScore(
   return 0;
 }
 
+function calculateVolumeConfirmation(
+  ratio: number
+): number {
+  if (!Number.isFinite(ratio)) {
+    return 0;
+  }
+
+  if (ratio < 0.5) {
+    return -1;
+  }
+
+  if (ratio < 0.7) {
+    return -0.5;
+  }
+
+  if (ratio < 1.0) {
+    return -0.25;
+  }
+
+  if (ratio < 1.5) {
+    return 0.5;
+  }
+
+  if (ratio < 2.0) {
+    return 0.8;
+  }
+
+  return 1;
+}
+
 export function calculateAlphaScore(
   context: AlphaContext
 ): AlphaScoreResult {
@@ -43,94 +74,185 @@ export function calculateAlphaScore(
       context.momentum.direction
     );
 
+  const structureDirection =
+    directionToScore(
+      context.structure.trend ===
+        "RANGE"
+        ? "NEUTRAL"
+        : context.structure.trend
+    );
+
+  /*
+   * Alpha Score weights
+   *
+   * Trend      30
+   * Momentum   20
+   * Volume     20
+   * Structure  20
+   * Volatility 10
+   */
+
   const trendScore =
     trendDirection *
     context.trend.strength *
-    0.35;
+    0.30;
 
   const momentumScore =
     momentumDirection *
     context.momentum.strength *
-    0.25;
+    0.20;
 
-  let volumeScore = 0;
+  const volumeConfirmation =
+    calculateVolumeConfirmation(
+      context.volume.volumeRatio
+    );
 
-  if (
-    context.volatility.level === "HIGH"
-  ) {
-    volumeScore = 0;
-  }
+  const volumeDirection =
+    trendDirection !== 0
+      ? trendDirection
+      : momentumDirection !== 0
+        ? momentumDirection
+        : structureDirection;
 
-  if (
-    context.trend.direction !== "NEUTRAL" &&
-    context.momentum.direction !== "NEUTRAL"
-  ) {
-    volumeScore = 20;
-  }
+  const volumeScore =
+    volumeConfirmation *
+    volumeDirection *
+    20;
 
+  const structureScore =
+    structureDirection *
+    context.structure.strength *
+    0.20;
+
+  /*
+   * Volatility is a risk/context factor.
+   * It does not independently decide direction.
+   */
   let volatilityScore = 0;
 
   if (
-    context.volatility.level === "LOW"
+    context.volatility.level ===
+    "HIGH"
   ) {
-    volatilityScore = 10;
+    volatilityScore = -10;
   } else if (
-    context.volatility.level === "NORMAL"
+    context.volatility.level ===
+    "LOW"
   ) {
-    volatilityScore = 20;
-  } else {
-    volatilityScore = 5;
+    volatilityScore = 3;
   }
 
+  const rawScore =
+    trendScore +
+    momentumScore +
+    volumeScore +
+    structureScore;
+
   const directionalScore =
-    trendScore + momentumScore;
+    rawScore >= 0
+      ? rawScore + volatilityScore
+      : rawScore - volatilityScore;
 
-  const directionMultiplier =
-    directionalScore >= 0 ? 1 : -1;
+  const normalizedScore =
+    Math.max(
+      -100,
+      Math.min(
+        100,
+        Math.round(
+          directionalScore
+        )
+      )
+    );
 
-  const score = Math.round(
-    directionalScore +
-      volumeScore * directionMultiplier +
-      volatilityScore * directionMultiplier
-  );
+  let bias: AlphaDirection =
+    "NEUTRAL";
 
-  const normalizedScore = Math.max(
-    -100,
-    Math.min(100, score)
-  );
-
-  let bias: AlphaDirection = "NEUTRAL";
-
-  if (normalizedScore >= 20) {
+  if (
+    normalizedScore >= 20
+  ) {
     bias = "BULLISH";
-  } else if (normalizedScore <= -20) {
+  } else if (
+    normalizedScore <= -20
+  ) {
     bias = "BEARISH";
   }
 
-  const confidence = Math.min(
-    100,
-    Math.abs(normalizedScore)
+  /*
+   * High volatility reduces confidence.
+   */
+  let confidence = Math.abs(
+    normalizedScore
   );
 
-  const reasons = [
+  if (
+    context.volatility.level ===
+    "HIGH"
+  ) {
+    confidence = Math.max(
+      0,
+      confidence - 10
+    );
+  }
+
+  const reasons: string[] = [
     ...context.trend.reasons,
     ...context.momentum.reasons,
-    ...context.volatility.reasons,
+    ...context.structure.reasons,
   ];
+
+  const ratio =
+    context.volume.volumeRatio;
+
+  if (ratio < 0.7) {
+    reasons.push(
+      `Volume is weak at ${ratio.toFixed(
+        2
+      )}x average`
+    );
+  } else if (ratio >= 1.5) {
+    reasons.push(
+      `Volume strongly confirms the move at ${ratio.toFixed(
+        2
+      )}x average`
+    );
+  } else {
+    reasons.push(
+      `Volume is at ${ratio.toFixed(
+        2
+      )}x average`
+    );
+  }
+
+  if (
+    context.volatility.level ===
+    "HIGH"
+  ) {
+    reasons.push(
+      "High volatility increases trade risk"
+    );
+  }
 
   return {
     score: normalizedScore,
     bias,
     confidence,
     components: {
-      trend: Math.round(trendScore),
-      momentum: Math.round(momentumScore),
+      trend: Math.round(
+        trendScore
+      ),
+      momentum: Math.round(
+        momentumScore
+      ),
       volume: Math.round(
-        volumeScore * directionMultiplier
+        volumeScore
       ),
-      volatility: Math.round(
-        volatilityScore * directionMultiplier
+      structure: Math.round(
+        structureScore
       ),
+      volatility:
+        Math.round(
+          volatilityScore
+        ),
     },
     reasons,
   };

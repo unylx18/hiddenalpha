@@ -9,6 +9,16 @@ export type MarketBias =
   | "BEARISH"
   | "NEUTRAL";
 
+export type MarketContextBase = {
+  symbol: string;
+  timeframe: string;
+  timestamp: string;
+  indicators: IndicatorResult;
+  regime: MarketRegimeResult;
+  volume: VolumeAnalysis;
+  alpha: AlphaContext;
+};
+
 export type MarketContextScore = {
   bias: MarketBias;
   score: number;
@@ -16,22 +26,7 @@ export type MarketContextScore = {
   reasons: string[];
 };
 
-export type MarketContextBase = {
-  symbol: string;
-  timeframe: string;
-  timestamp: string;
-
-  indicators: IndicatorResult;
-
-  regime: MarketRegimeResult;
-
-  volume: VolumeAnalysis;
-
-  alpha: AlphaContext;
+export type MarketContext = MarketContextBase & {
+  score: MarketContextScore;
+  alphaScore: AlphaScoreResult;
 };
-
-export type MarketContext =
-  MarketContextBase & {
-    score: MarketContextScore;
-    alphaScore: AlphaScoreResult;
-  };

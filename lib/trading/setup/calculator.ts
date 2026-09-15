@@ -2,7 +2,9 @@ import { MarketContext } from "@/lib/trading/context/types";
 import { TradeSetup } from "@/lib/trading/setup/types";
 
 const DEFAULT_ATR_MULTIPLIER = 1.5;
-const DEFAULT_RISK_REWARD = 2;
+
+const TP1_RISK_REWARD = 1;
+const TP2_RISK_REWARD = 2;
 
 export function calculateTradeSetup(
   context: MarketContext,
@@ -14,7 +16,10 @@ export function calculateTradeSetup(
   const atr =
     context.indicators.atr14;
 
-  if (atr === null || atr <= 0) {
+  if (
+    atr === null ||
+    atr <= 0
+  ) {
     throw new Error(
       "ATR is required to calculate trade setup"
     );
@@ -23,35 +28,45 @@ export function calculateTradeSetup(
   const atrMultiplier =
     DEFAULT_ATR_MULTIPLIER;
 
-  const riskRewardRatio =
-    DEFAULT_RISK_REWARD;
-
   const stopDistance =
     atr * atrMultiplier;
 
   let stopLossPrice: number;
-  let takeProfitPrice: number;
+  let takeProfit1Price: number;
+  let takeProfit2Price: number;
 
   if (direction === "LONG") {
     stopLossPrice =
       entryPrice - stopDistance;
 
-    takeProfitPrice =
+    takeProfit1Price =
       entryPrice +
       stopDistance *
-        riskRewardRatio;
+        TP1_RISK_REWARD;
+
+    takeProfit2Price =
+      entryPrice +
+      stopDistance *
+        TP2_RISK_REWARD;
   } else {
     stopLossPrice =
       entryPrice + stopDistance;
 
-    takeProfitPrice =
+    takeProfit1Price =
       entryPrice -
       stopDistance *
-        riskRewardRatio;
+        TP1_RISK_REWARD;
+
+    takeProfit2Price =
+      entryPrice -
+      stopDistance *
+        TP2_RISK_REWARD;
   }
 
   const stopDistancePercent =
-    (stopDistance / entryPrice) * 100;
+    (stopDistance /
+      entryPrice) *
+    100;
 
   return {
     symbol: context.symbol,
@@ -64,13 +79,29 @@ export function calculateTradeSetup(
 
     stopLossPrice,
 
-    takeProfitPrice,
+    /*
+     * Keep takeProfitPrice as TP2
+     * for backward compatibility with
+     * the existing Risk Engine.
+     */
+    takeProfitPrice:
+      takeProfit2Price,
+
+    takeProfit1Price,
+    takeProfit2Price,
 
     stopDistance,
 
     stopDistancePercent,
 
-    riskRewardRatio,
+    riskRewardRatio:
+      TP2_RISK_REWARD,
+
+    riskRewardRatioTP1:
+      TP1_RISK_REWARD,
+
+    riskRewardRatioTP2:
+      TP2_RISK_REWARD,
 
     atr,
 

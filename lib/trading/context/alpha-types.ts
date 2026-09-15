@@ -3,6 +3,8 @@ export type AlphaDirection =
   | "BEARISH"
   | "NEUTRAL";
 
+export type AlphaBias = AlphaDirection;
+
 export type TrendContext = {
   direction: AlphaDirection;
   strength: number;
@@ -27,12 +29,53 @@ export type VolatilityContext = {
   reasons: string[];
 };
 
+export type StructureTrend =
+  | "BULLISH"
+  | "BEARISH"
+  | "RANGE";
+
+export type StructureBreakType =
+  | "BOS"
+  | "CHoCH";
+
+export type StructureContext = {
+  trend: StructureTrend;
+  strength: number;
+  latestSwing:
+    | "HH"
+    | "HL"
+    | "LH"
+    | "LL"
+    | null;
+  latestBreak: {
+    type: StructureBreakType;
+    direction: AlphaDirection;
+    price: number;
+    brokenPrice: number;
+    timestamp: string;
+  } | null;
+  reasons: string[];
+};
+
+export type VolumeContext = {
+  currentVolume: number;
+  averageVolume: number;
+  volumeRatio: number;
+  condition: "HIGH" | "NORMAL" | "LOW";
+};
+
 export type AlphaContext = {
   symbol: string;
   timeframe: string;
   timestamp: string;
 
   trend: TrendContext;
+
   momentum: MomentumContext;
+
+  volume: VolumeContext;
+
   volatility: VolatilityContext;
+
+  structure: StructureContext;
 };

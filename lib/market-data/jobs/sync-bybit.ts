@@ -8,8 +8,18 @@ const SYMBOLS = [
 
 const TIMEFRAMES = [
   "1m",
+  "3m",
   "5m",
+  "15m",
+  "30m",
   "1h",
+  "2h",
+  "4h",
+  "6h",
+  "12h",
+  "1d",
+  "1w",
+  "1M",
 ];
 
 export async function syncBybitMarkets() {
@@ -33,9 +43,10 @@ export async function syncBybitMarkets() {
           success: false,
           symbol,
           timeframe,
-          error: error instanceof Error
-            ? error.message
-            : String(error),
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
         });
       }
     }

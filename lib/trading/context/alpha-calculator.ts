@@ -5,7 +5,10 @@ import {
   AlphaDirection,
   TrendContext,
   MomentumContext,
+  VolumeContext,
+  StructureContext,
 } from "@/lib/trading/context/alpha-types";
+import type { MarketStructureResult } from "@/lib/market-structure/detect-swings";
 
 function calculateTrend(
   indicators: IndicatorResult
@@ -24,33 +27,52 @@ function calculateTrend(
   if (ema20 !== null) {
     if (price > ema20) {
       bullishPoints++;
-      reasons.push("Price is above EMA20");
+      reasons.push(
+        "Price is above EMA20"
+      );
     } else {
       bearishPoints++;
-      reasons.push("Price is below EMA20");
+      reasons.push(
+        "Price is below EMA20"
+      );
     }
   }
 
-  if (ema20 !== null && ema50 !== null) {
+  if (
+    ema20 !== null &&
+    ema50 !== null
+  ) {
     if (ema20 > ema50) {
       bullishPoints++;
-      reasons.push("EMA20 is above EMA50");
+      reasons.push(
+        "EMA20 is above EMA50"
+      );
     } else {
       bearishPoints++;
-      reasons.push("EMA20 is below EMA50");
+      reasons.push(
+        "EMA20 is below EMA50"
+      );
     }
   }
 
-  let direction: AlphaDirection = "NEUTRAL";
+  let direction: AlphaDirection =
+    "NEUTRAL";
 
-  if (bullishPoints > bearishPoints) {
+  if (
+    bullishPoints >
+    bearishPoints
+  ) {
     direction = "BULLISH";
-  } else if (bearishPoints > bullishPoints) {
+  } else if (
+    bearishPoints >
+    bullishPoints
+  ) {
     direction = "BEARISH";
   }
 
   const totalPoints =
-    bullishPoints + bearishPoints;
+    bullishPoints +
+    bearishPoints;
 
   const strength =
     totalPoints === 0
@@ -78,23 +100,35 @@ function calculateMomentum(
 
   const reasons: string[] = [];
 
-  let direction: AlphaDirection = "NEUTRAL";
+  let direction: AlphaDirection =
+    "NEUTRAL";
+
   let strength = 0;
 
   if (rsi14 !== null) {
-    if (rsi14 >= 55 && rsi14 < 70) {
+    if (
+      rsi14 >= 55 &&
+      rsi14 < 70
+    ) {
       direction = "BULLISH";
+
       strength = Math.round(
-        ((rsi14 - 50) / 20) * 100
+        ((rsi14 - 50) / 20) *
+          100
       );
 
       reasons.push(
         "RSI supports bullish momentum"
       );
-    } else if (rsi14 <= 45 && rsi14 > 30) {
+    } else if (
+      rsi14 <= 45 &&
+      rsi14 > 30
+    ) {
       direction = "BEARISH";
+
       strength = Math.round(
-        ((50 - rsi14) / 20) * 100
+        ((50 - rsi14) / 20) *
+          100
       );
 
       reasons.push(
@@ -128,28 +162,142 @@ function calculateMomentum(
   };
 }
 
+function calculateStructure(
+  structure: MarketStructureResult
+): StructureContext {
+  const latestClassifiedSwing =
+    [...structure.swings]
+      .reverse()
+      .find(
+        (swing) =>
+          swing.label !== null
+      );
+
+  const latestBreak =
+    structure.breaks.length > 0
+      ? structure.breaks[
+          structure.breaks.length - 1
+        ]
+      : null;
+
+  let direction: AlphaDirection =
+    "NEUTRAL";
+
+  if (structure.trend === "BULLISH") {
+    direction = "BULLISH";
+  } else if (
+    structure.trend === "BEARISH"
+  ) {
+    direction = "BEARISH";
+  }
+
+  let strength = 0;
+
+  if (structure.trend !== "RANGE") {
+    strength = 70;
+  }
+
+  if (latestBreak) {
+    strength += 30;
+
+    if (
+      latestBreak.direction ===
+      "BULLISH"
+    ) {
+      direction = "BULLISH";
+    } else if (
+      latestBreak.direction ===
+      "BEARISH"
+    ) {
+      direction = "BEARISH";
+    }
+  }
+
+  const reasons: string[] = [];
+
+  if (
+    structure.trend === "BULLISH"
+  ) {
+    reasons.push(
+      "Market structure is bullish"
+    );
+  } else if (
+    structure.trend === "BEARISH"
+  ) {
+    reasons.push(
+      "Market structure is bearish"
+    );
+  } else {
+    reasons.push(
+      "Market structure is ranging"
+    );
+  }
+
+  if (latestClassifiedSwing) {
+    reasons.push(
+      `Latest structure swing is ${latestClassifiedSwing.label}`
+    );
+  }
+
+  if (latestBreak) {
+    reasons.push(
+      `${latestBreak.type} ${latestBreak.direction.toLowerCase()} structure break`
+    );
+  }
+
+  return {
+    trend: structure.trend,
+    strength: Math.min(
+      strength,
+      100
+    ),
+    latestSwing:
+      latestClassifiedSwing?.label ??
+      null,
+    latestBreak: latestBreak
+      ? {
+          type: latestBreak.type,
+          direction:
+            latestBreak.direction,
+          price: latestBreak.price,
+          brokenPrice:
+            latestBreak.brokenPrice,
+          timestamp:
+            latestBreak.timestamp,
+        }
+      : null,
+    reasons,
+  };
+}
+
 export function calculateAlphaContext(
-  indicators: IndicatorResult
+  indicators: IndicatorResult,
+  volume: VolumeContext,
+  structure: MarketStructureResult
 ): AlphaContext {
-  const trend = calculateTrend(indicators);
+  const trend =
+    calculateTrend(indicators);
 
-const momentum = calculateMomentum(
-  indicators
-);
+  const momentum =
+    calculateMomentum(indicators);
 
-const volatility =
-  calculateVolatilityContext(
-    indicators.price,
-    indicators.atr14
-  );
+  const volatility =
+    calculateVolatilityContext(
+      indicators.price,
+      indicators.atr14
+    );
+
+  const structureContext =
+    calculateStructure(structure);
 
   return {
     symbol: indicators.symbol,
     timeframe: indicators.timeframe,
     timestamp: indicators.timestamp,
-
     trend,
     momentum,
+    volume,
     volatility,
+    structure: structureContext,
   };
 }

@@ -47,4 +47,22 @@ export type TradingSignal = {
   reasons: SignalReason[];
 
   invalidation: string | null;
+
+  /*
+   * Trade Setup
+   */
+
+  entryPrice?: number;
+
+  stopLossPrice?: number;
+
+  takeProfitPrice?: number;
+
+  takeProfit1Price?: number;
+
+  takeProfit2Price?: number;
+
+  riskRewardRatioTP1?: number;
+
+  riskRewardRatioTP2?: number;
 };

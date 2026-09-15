@@ -77,12 +77,36 @@ export function generateManualTradePlan(
     timeframe,
     timestamp: signal.timestamp,
     direction,
+
     entryPrice,
     stopLossPrice,
+
+    /*
+     * Manual plan uses the trader-defined
+     * take profit as TP2.
+     */
     takeProfitPrice,
+
+    /*
+     * TP1 = 1R from entry.
+     * TP2 = manually defined TP.
+     */
+    takeProfit1Price:
+      direction === "LONG"
+        ? entryPrice + stopDistance
+        : entryPrice - stopDistance,
+
+    takeProfit2Price:
+      takeProfitPrice,
+
     stopDistance,
     stopDistancePercent,
+
     riskRewardRatio,
+
+    riskRewardRatioTP1: 1,
+    riskRewardRatioTP2: riskRewardRatio,
+
     atr: 0,
     atrMultiplier: 0,
   };
