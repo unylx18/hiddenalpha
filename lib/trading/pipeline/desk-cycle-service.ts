@@ -13,15 +13,36 @@ import {
   type RuntimeLock,
 } from "@/lib/trading/pipeline/runtime-lock-service";
 
+import {
+  saveDeskRun,
+  type DeskRunRecord,
+} from "@/lib/trading/pipeline/desk-run-repository";
+
 const DESK_LOCK_NAME =
   "hiddenalpha:desk-cycle";
 
 const DESK_LOCK_TTL_SECONDS =
   240;
 
+async function saveDeskRunSafely(
+  run: DeskRunRecord
+) {
+  try {
+    await saveDeskRun(run);
+  } catch (error) {
+    console.error(
+      "[HiddenAlpha] Failed to save desk run observability record",
+      error
+    );
+  }
+}
+
 export async function runDeskCycle(
   input: TradingPipelineInput = {}
 ) {
+  const startedAt =
+    new Date().toISOString();
+
   const cycleStartedAt =
     performance.now();
 
@@ -38,17 +59,27 @@ export async function runDeskCycle(
   let pipelineDurationMs =
     0;
 
-  let result:
-    Record<string, unknown>;
+  let marketSyncTotal:
+    number | null =
+    null;
+
+  let marketSyncSuccess:
+    number | null =
+    null;
+
+  let marketSyncFailed:
+    number | null =
+    null;
+
+  let pipelineResult:
+    unknown =
+    null;
 
   try {
     /*
      * ========================================
-     * STAGE 0 — DISTRIBUTED RUNTIME LOCK
+     * STAGE 0 — DISTRIBUTED LOCK
      * ========================================
-     *
-     * Only one server instance may execute the
-     * official HiddenAlpha desk cycle at once.
      */
 
     const lockStartedAt =
@@ -65,22 +96,84 @@ export async function runDeskCycle(
       lockStartedAt;
 
     /*
-     * Another scheduler request already owns
-     * the desk.
+     * Another official desk cycle is already
+     * running.
      *
-     * This is a healthy skip, not an error.
+     * Healthy skip, not an engine failure.
      */
     if (!lock.acquired) {
-      return {
-        success: true,
+      const finishedAt =
+        new Date().toISOString();
 
-        skipped: true,
+      const totalMs =
+        Math.round(
+          performance.now() -
+            cycleStartedAt
+        );
+
+      await saveDeskRunSafely({
+        startedAt,
+        finishedAt,
+
+        success:
+          true,
+
+        skipped:
+          true,
+
+        stage:
+          "LOCKED",
+
+        lockMs:
+          lockDurationMs,
+
+        marketSyncMs:
+          0,
+
+        pipelineMs:
+          0,
+
+        totalMs,
+
+        marketSyncTotal:
+          null,
+
+        marketSyncSuccess:
+          null,
+
+        marketSyncFailed:
+          null,
+
+        pipelineResult:
+          null,
+
+        error:
+          null,
+
+        metadata: {
+          lockName:
+            DESK_LOCK_NAME,
+
+          lockAcquired:
+            false,
+
+          source:
+            "desk-cycle",
+        },
+      });
+
+      return {
+        success:
+          true,
+
+        skipped:
+          true,
 
         stage:
           "LOCKED",
 
         timestamp:
-          new Date().toISOString(),
+          finishedAt,
 
         message:
           "Another HiddenAlpha desk cycle is already running.",
@@ -111,11 +204,7 @@ export async function runDeskCycle(
           pipelineMs:
             0,
 
-          totalMs:
-            Math.round(
-              performance.now() -
-                cycleStartedAt
-            ),
+          totalMs,
         },
       };
     }
@@ -136,27 +225,93 @@ export async function runDeskCycle(
       performance.now() -
       marketSyncStartedAt;
 
-    const marketSyncSuccess =
+    const successfulSyncs =
       marketSync.filter(
         (item) =>
           item.success
       );
 
-    const marketSyncFailed =
+    const failedSyncs =
       marketSync.filter(
         (item) =>
           !item.success
       );
 
+    marketSyncTotal =
+      marketSync.length;
+
+    marketSyncSuccess =
+      successfulSyncs.length;
+
+    marketSyncFailed =
+      failedSyncs.length;
+
     /*
-     * Never run lifecycle / publisher against
-     * partially failed market data.
+     * Do not publish against partially failed
+     * market data.
      */
     if (
-      marketSyncFailed.length >
+      failedSyncs.length >
       0
     ) {
-      result = {
+      const finishedAt =
+        new Date().toISOString();
+
+      const totalMs =
+        Math.round(
+          performance.now() -
+            cycleStartedAt
+        );
+
+      await saveDeskRunSafely({
+        startedAt,
+        finishedAt,
+
+        success:
+          false,
+
+        skipped:
+          false,
+
+        stage:
+          "MARKET_SYNC_FAILED",
+
+        lockMs:
+          lockDurationMs,
+
+        marketSyncMs:
+          marketSyncDurationMs,
+
+        pipelineMs:
+          0,
+
+        totalMs,
+
+        marketSyncTotal,
+
+        marketSyncSuccess,
+
+        marketSyncFailed,
+
+        pipelineResult:
+          null,
+
+        error:
+          "One or more market sync jobs failed.",
+
+        metadata: {
+          lockName:
+            DESK_LOCK_NAME,
+
+          lockAcquired:
+            true,
+
+          source:
+            "desk-cycle",
+        },
+      });
+
+      return {
         success:
           false,
 
@@ -167,17 +322,17 @@ export async function runDeskCycle(
           "MARKET_SYNC_FAILED",
 
         timestamp:
-          new Date().toISOString(),
+          finishedAt,
 
         marketSync: {
           total:
-            marketSync.length,
+            marketSyncTotal,
 
           success:
-            marketSyncSuccess.length,
+            marketSyncSuccess,
 
           failed:
-            marketSyncFailed.length,
+            marketSyncFailed,
 
           results:
             marketSync,
@@ -208,20 +363,14 @@ export async function runDeskCycle(
           pipelineMs:
             0,
 
-          totalMs:
-            Math.round(
-              performance.now() -
-                cycleStartedAt
-            ),
+          totalMs,
         },
       };
-
-      return result;
     }
 
     /*
      * ========================================
-     * STAGE 2 — OFFICIAL TRADING PIPELINE
+     * STAGE 2 — TRADING PIPELINE
      * ========================================
      *
      * Lifecycle
@@ -230,7 +379,7 @@ export async function runDeskCycle(
      *    ↓
      * Publisher
      *    ↓
-     * Persistent signal
+     * Persistent Signal
      */
 
     const pipelineStartedAt =
@@ -245,7 +394,72 @@ export async function runDeskCycle(
       performance.now() -
       pipelineStartedAt;
 
-    result = {
+    pipelineResult =
+      pipeline;
+
+    const finishedAt =
+      new Date().toISOString();
+
+    const totalMs =
+      Math.round(
+        performance.now() -
+          cycleStartedAt
+      );
+
+    /*
+     * ========================================
+     * STAGE 3 — OBSERVABILITY
+     * ========================================
+     */
+
+    await saveDeskRunSafely({
+      startedAt,
+      finishedAt,
+
+      success:
+        true,
+
+      skipped:
+        false,
+
+      stage:
+        "COMPLETED",
+
+      lockMs:
+        lockDurationMs,
+
+      marketSyncMs:
+        marketSyncDurationMs,
+
+      pipelineMs:
+        pipelineDurationMs,
+
+      totalMs,
+
+      marketSyncTotal,
+
+      marketSyncSuccess,
+
+      marketSyncFailed,
+
+      pipelineResult,
+
+      error:
+        null,
+
+      metadata: {
+        lockName:
+          DESK_LOCK_NAME,
+
+        lockAcquired:
+          true,
+
+        source:
+          "desk-cycle",
+      },
+    });
+
+    return {
       success:
         true,
 
@@ -256,17 +470,17 @@ export async function runDeskCycle(
         "COMPLETED",
 
       timestamp:
-        new Date().toISOString(),
+        finishedAt,
 
       marketSync: {
         total:
-          marketSync.length,
+          marketSyncTotal,
 
         success:
-          marketSyncSuccess.length,
+          marketSyncSuccess,
 
         failed:
-          0,
+          marketSyncFailed,
 
         results:
           marketSync,
@@ -298,19 +512,75 @@ export async function runDeskCycle(
             pipelineDurationMs
           ),
 
-        totalMs:
-          Math.round(
-            performance.now() -
-              cycleStartedAt
-          ),
+        totalMs,
       },
     };
-
-    return result;
   } catch (
     error:
       unknown
   ) {
+    const finishedAt =
+      new Date().toISOString();
+
+    const totalMs =
+      Math.round(
+        performance.now() -
+          cycleStartedAt
+      );
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Unknown desk cycle error";
+
+    await saveDeskRunSafely({
+      startedAt,
+      finishedAt,
+
+      success:
+        false,
+
+      skipped:
+        false,
+
+      stage:
+        "DESK_CYCLE_ERROR",
+
+      lockMs:
+        lockDurationMs,
+
+      marketSyncMs:
+        marketSyncDurationMs,
+
+      pipelineMs:
+        pipelineDurationMs,
+
+      totalMs,
+
+      marketSyncTotal,
+
+      marketSyncSuccess,
+
+      marketSyncFailed,
+
+      pipelineResult,
+
+      error:
+        errorMessage,
+
+      metadata: {
+        lockName:
+          DESK_LOCK_NAME,
+
+        lockAcquired:
+          lock?.acquired ??
+          false,
+
+        source:
+          "desk-cycle",
+      },
+    });
+
     return {
       success:
         false,
@@ -322,12 +592,10 @@ export async function runDeskCycle(
         "DESK_CYCLE_ERROR",
 
       timestamp:
-        new Date().toISOString(),
+        finishedAt,
 
       error:
-        error instanceof Error
-          ? error.message
-          : "Unknown desk cycle error",
+        errorMessage,
 
       marketSync:
         null,
@@ -360,11 +628,7 @@ export async function runDeskCycle(
             pipelineDurationMs
           ),
 
-        totalMs:
-          Math.round(
-            performance.now() -
-              cycleStartedAt
-          ),
+        totalMs,
       },
     };
   } finally {
@@ -372,12 +636,8 @@ export async function runDeskCycle(
      * ========================================
      * ALWAYS RELEASE OWNED LOCK
      * ========================================
-     *
-     * Only the UUID owner can release it.
-     *
-     * If release itself fails, the PostgreSQL
-     * TTL will still recover the lock.
      */
+
     if (
       lock?.acquired
     ) {
