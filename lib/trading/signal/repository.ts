@@ -8,6 +8,88 @@ import type {
 
 /*
  * ========================================
+ * REPOSITORY ERROR
+ * ========================================
+ */
+
+export class TradingSignalRepositoryError
+  extends Error {
+  code:
+    string | null;
+
+  details:
+    string | null;
+
+  hint:
+    string | null;
+
+  constructor({
+    message,
+    code = null,
+    details = null,
+    hint = null,
+  }: {
+    message: string;
+    code?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  }) {
+    super(message);
+
+    this.name =
+      "TradingSignalRepositoryError";
+
+    this.code =
+      code;
+
+    this.details =
+      details;
+
+    this.hint =
+      hint;
+  }
+}
+
+export function isTradingSignalUniqueViolation(
+  error: unknown
+): boolean {
+  return (
+    error instanceof
+      TradingSignalRepositoryError &&
+    error.code ===
+      "23505"
+  );
+}
+
+function createRepositoryError(
+  prefix: string,
+  error: {
+    message: string;
+    code?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  }
+) {
+  return new TradingSignalRepositoryError({
+    message:
+      `${prefix}: ${error.message}`,
+
+    code:
+      error.code ??
+      null,
+
+    details:
+      error.details ??
+      null,
+
+    hint:
+      error.hint ??
+      null,
+  });
+}
+
+/*
+ * ========================================
  * SAVE SIGNAL
  * ========================================
  */
@@ -21,68 +103,72 @@ export async function saveTradingSignal(
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .insert({
-      symbol:
-        signal.symbol,
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .insert({
+        symbol:
+          signal.symbol,
 
-      timeframe:
-        signal.timeframe,
+        timeframe:
+          signal.timeframe,
 
-      timestamp:
-        signal.timestamp,
+        timestamp:
+          signal.timestamp,
 
-      direction:
-        signal.direction,
+        direction:
+          signal.direction,
 
-      summary:
-        signal.summary,
+        summary:
+          signal.summary,
 
-      confidence:
-        signal.confidence,
+        confidence:
+          signal.confidence,
 
-      confidence_level:
-        signal.confidenceLevel,
+        confidence_level:
+          signal.confidenceLevel,
 
-      quality:
-        signal.quality,
+        quality:
+          signal.quality,
 
-      status:
-        signal.status,
+        status:
+          signal.status,
 
-      reasons:
-        signal.reasons,
+        reasons:
+          signal.reasons,
 
-      invalidation:
-        signal.invalidation,
+        invalidation:
+          signal.invalidation,
 
-      entry_price:
-        signal.entryPrice ??
-        null,
+        entry_price:
+          signal.entryPrice ??
+          null,
 
-      stop_loss_price:
-        signal.stopLossPrice ??
-        null,
+        stop_loss_price:
+          signal.stopLossPrice ??
+          null,
 
-      /*
-       * Current DB schema stores
-       * the final target here.
-       *
-       * HiddenAlpha currently treats
-       * TP2 as final completion target.
-       */
-      take_profit_price:
-        signal.takeProfit2Price ??
-        signal.takeProfitPrice ??
-        null,
-    })
-    .select()
-    .single();
+        /*
+         * Current DB schema stores
+         * final target here.
+         *
+         * HiddenAlpha currently treats
+         * TP2 as final completion target.
+         */
+        take_profit_price:
+          signal.takeProfit2Price ??
+          signal.takeProfitPrice ??
+          null,
+      })
+      .select()
+      .single();
 
   if (error) {
-    throw new Error(
-      `Failed to save trading signal: ${error.message}`
+    throw createRepositoryError(
+      "Failed to save trading signal",
+      error
     );
   }
 
@@ -104,36 +190,41 @@ export async function getActiveTradingSignalForSymbol(
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .select("*")
-    .eq(
-      "symbol",
-      symbol
-    )
-    .eq(
-      "status",
-      "ACTIVE"
-    )
-    .in(
-      "direction",
-      [
-        "LONG",
-        "SHORT",
-      ]
-    )
-    .order(
-      "timestamp",
-      {
-        ascending: false,
-      }
-    )
-    .limit(1)
-    .maybeSingle();
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .select("*")
+      .eq(
+        "symbol",
+        symbol
+      )
+      .eq(
+        "status",
+        "ACTIVE"
+      )
+      .in(
+        "direction",
+        [
+          "LONG",
+          "SHORT",
+        ]
+      )
+      .order(
+        "timestamp",
+        {
+          ascending:
+            false,
+        }
+      )
+      .limit(1)
+      .maybeSingle();
 
   if (error) {
-    throw new Error(
-      `Failed to fetch active signal: ${error.message}`
+    throw createRepositoryError(
+      "Failed to fetch active signal",
+      error
     );
   }
 
@@ -144,8 +235,6 @@ export async function getActiveTradingSignalForSymbol(
  * ========================================
  * LATEST ACTIVE SIGNAL
  * ========================================
- *
- * Used by Overview later.
  */
 
 export async function getLatestActiveTradingSignal() {
@@ -155,32 +244,37 @@ export async function getLatestActiveTradingSignal() {
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .select("*")
-    .eq(
-      "status",
-      "ACTIVE"
-    )
-    .in(
-      "direction",
-      [
-        "LONG",
-        "SHORT",
-      ]
-    )
-    .order(
-      "timestamp",
-      {
-        ascending: false,
-      }
-    )
-    .limit(1)
-    .maybeSingle();
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .select("*")
+      .eq(
+        "status",
+        "ACTIVE"
+      )
+      .in(
+        "direction",
+        [
+          "LONG",
+          "SHORT",
+        ]
+      )
+      .order(
+        "timestamp",
+        {
+          ascending:
+            false,
+        }
+      )
+      .limit(1)
+      .maybeSingle();
 
   if (error) {
-    throw new Error(
-      `Failed to fetch latest active signal: ${error.message}`
+    throw createRepositoryError(
+      "Failed to fetch latest active signal",
+      error
     );
   }
 
@@ -191,9 +285,6 @@ export async function getLatestActiveTradingSignal() {
  * ========================================
  * ALL ACTIVE SIGNALS
  * ========================================
- *
- * Lifecycle monitor will use this
- * in the next step.
  */
 
 export async function getActiveTradingSignals() {
@@ -203,30 +294,35 @@ export async function getActiveTradingSignals() {
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .select("*")
-    .eq(
-      "status",
-      "ACTIVE"
-    )
-    .in(
-      "direction",
-      [
-        "LONG",
-        "SHORT",
-      ]
-    )
-    .order(
-      "timestamp",
-      {
-        ascending: false,
-      }
-    );
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .select("*")
+      .eq(
+        "status",
+        "ACTIVE"
+      )
+      .in(
+        "direction",
+        [
+          "LONG",
+          "SHORT",
+        ]
+      )
+      .order(
+        "timestamp",
+        {
+          ascending:
+            false,
+        }
+      );
 
   if (error) {
-    throw new Error(
-      `Failed to fetch active signals: ${error.message}`
+    throw createRepositoryError(
+      "Failed to fetch active signals",
+      error
     );
   }
 
@@ -254,24 +350,28 @@ export async function updateTradingSignalStatus(
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .update({
-      status,
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .update({
+        status,
 
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      signalId
-    )
-    .select()
-    .single();
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        signalId
+      )
+      .select()
+      .single();
 
   if (error) {
-    throw new Error(
-      `Failed to update trading signal status: ${error.message}`
+    throw createRepositoryError(
+      "Failed to update trading signal status",
+      error
     );
   }
 
@@ -293,18 +393,22 @@ export async function getTradingSignalById(
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .select("*")
-    .eq(
-      "id",
-      signalId
-    )
-    .single();
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .select("*")
+      .eq(
+        "id",
+        signalId
+      )
+      .single();
 
   if (error) {
-    throw new Error(
-      `Failed to fetch trading signal: ${error.message}`
+    throw createRepositoryError(
+      "Failed to fetch trading signal",
+      error
     );
   }
 

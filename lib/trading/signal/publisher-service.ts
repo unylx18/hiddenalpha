@@ -4,6 +4,7 @@ import {
 
 import {
   getActiveTradingSignalForSymbol,
+  isTradingSignalUniqueViolation,
   saveTradingSignal,
 } from "@/lib/trading/signal/repository";
 
@@ -66,11 +67,6 @@ export async function publishBestOpportunity({
 
   const candidate =
     scanner.best;
-
-  /*
-   * Scanner did not find an actionable
-   * candidate.
-   */
 
   if (
     !candidate ||
@@ -232,12 +228,8 @@ export async function publishBestOpportunity({
 
   /*
    * ========================================
-   * 3. ANTI DUPLICATE
+   * 3. APPLICATION ANTI-DUPLICATE
    * ========================================
-   *
-   * Do not publish a second signal for
-   * the same asset while the previous
-   * signal is still ACTIVE.
    */
 
   const existing =
@@ -265,13 +257,6 @@ export async function publishBestOpportunity({
    * ========================================
    * 4. FREEZE SIGNAL
    * ========================================
-   *
-   * Once this object is saved, these
-   * levels become immutable trade-plan
-   * levels.
-   *
-   * Future scanner recalculations must
-   * NOT silently replace them.
    */
 
   const publishedSignal: TradingSignal =
@@ -318,22 +303,93 @@ export async function publishBestOpportunity({
    * ========================================
    */
 
-  const savedSignal =
-    await saveTradingSignal(
-      publishedSignal
-    );
+  try {
+    const savedSignal =
+      await saveTradingSignal(
+        publishedSignal
+      );
 
-  return {
-    published: true,
+    return {
+      published: true,
 
-    reason:
-      "SIGNAL_PUBLISHED",
+      reason:
+        "SIGNAL_PUBLISHED",
 
-    activeSignal:
-      savedSignal,
+      activeSignal:
+        savedSignal,
 
-    candidate,
+      candidate,
 
-    scanner,
-  };
+      scanner,
+    };
+  } catch (
+    persistError:
+      unknown
+  ) {
+    /*
+     * Only PostgreSQL UNIQUE violation
+     * is considered an expected race.
+     *
+     * Any other persistence error is a
+     * real failure and must propagate.
+     */
+
+    if (
+      !isTradingSignalUniqueViolation(
+        persistError
+      )
+    ) {
+      throw persistError;
+    }
+
+    /*
+     * PostgreSQL code 23505 means another
+     * process may have inserted the ACTIVE
+     * signal after our pre-check.
+     */
+
+    const racedExisting =
+      await getActiveTradingSignalForSymbol(
+        candidate.symbol
+      );
+
+    if (
+      racedExisting
+    ) {
+      console.info(
+        "[HiddenAlpha] Signal publish race safely resolved",
+        {
+          symbol:
+            candidate.symbol,
+
+          reason:
+            "ACTIVE_SIGNAL_EXISTS",
+        }
+      );
+
+      return {
+        published:
+          false,
+
+        reason:
+          "ACTIVE_SIGNAL_EXISTS",
+
+        activeSignal:
+          racedExisting,
+
+        candidate,
+
+        scanner,
+      };
+    }
+
+    /*
+     * We received 23505 but cannot find
+     * the competing ACTIVE signal.
+     *
+     * Do not hide an inconsistent state.
+     */
+
+    throw persistError;
+  }
 }
