@@ -1,4 +1,3 @@
-
 import {
   createAdminClient,
 } from "@/lib/supabase/admin";
@@ -10,6 +9,15 @@ import {
 import {
   recordSignalPerformance,
 } from "@/lib/trading/performance/service";
+
+import {
+  getLifecycleCandles,
+} from "@/lib/trading/signal/lifecycle-candle-service";
+
+import {
+  resolveLifecycle,
+  type LifecycleResolution,
+} from "@/lib/trading/signal/lifecycle-resolver";
 
 type LifecyclePhase =
   | "WAITING_ENTRY"
@@ -47,12 +55,35 @@ function getMaxWaitingAge(
    * Signal may wait roughly
    * 2.5 candles for entry.
    */
+
   return Math.max(
     15,
     Math.round(
       minutes * 2.5
     )
   );
+}
+
+function parseDate(
+  value: unknown,
+  label: string
+) {
+  const date =
+    new Date(
+      String(value)
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    throw new Error(
+      `Invalid ${label}`
+    );
+  }
+
+  return date;
 }
 
 async function patchSignal(
@@ -68,20 +99,23 @@ async function patchSignal(
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .update({
-      ...patch,
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .update({
+        ...patch,
 
-      updated_at:
-        new Date().toISOString(),
-    })
-    .eq(
-      "id",
-      signalId
-    )
-    .select()
-    .single();
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "id",
+        signalId
+      )
+      .select()
+      .single();
 
   if (error) {
     throw new Error(
@@ -90,6 +124,121 @@ async function patchSignal(
   }
 
   return data;
+}
+
+function resolveTickerPoint({
+  direction,
+  entryPrice,
+  stopLossPrice,
+  takeProfit1Price,
+  takeProfit2Price,
+  entryTriggered,
+  tp1Hit,
+  currentPrice,
+  nowIso,
+}: {
+  direction:
+    "LONG" |
+    "SHORT";
+
+  entryPrice:
+    number;
+
+  stopLossPrice:
+    number;
+
+  takeProfit1Price:
+    number;
+
+  takeProfit2Price:
+    number;
+
+  entryTriggered:
+    boolean;
+
+  tp1Hit:
+    boolean;
+
+  currentPrice:
+    number;
+
+  nowIso:
+    string;
+}) {
+  /*
+   * This is a single observed point,
+   * not a historical OHLC interval.
+   *
+   * Deadline is intentionally null here.
+   *
+   * The historical resolver has already
+   * determined that the signal has not
+   * expired before we reach this fallback.
+   */
+
+  return resolveLifecycle({
+    direction,
+
+    entryPrice,
+
+    stopLossPrice,
+
+    takeProfit1Price,
+
+    takeProfit2Price,
+
+    entryTriggered,
+
+    tp1Hit,
+
+    candles: [
+      {
+        timestamp:
+          nowIso,
+
+        open:
+          currentPrice,
+
+        high:
+          currentPrice,
+
+        low:
+          currentPrice,
+
+        close:
+          currentPrice,
+
+        overlapsStart:
+          false,
+      },
+    ],
+
+    entryDeadlineTimestamp:
+      null,
+
+    observedUntilTimestamp:
+      nowIso,
+  });
+}
+
+function firstDefinedTimestamp(
+  ...values:
+    Array<
+      string |
+      null |
+      undefined
+    >
+) {
+  for (
+    const value of
+      values
+  ) {
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 async function monitorSignal(
@@ -103,6 +252,12 @@ async function monitorSignal(
   ) {
     return null;
   }
+
+  /*
+   * ========================================
+   * LIVE PRICE
+   * ========================================
+   */
 
   const ticker =
     await getBybitTicker(
@@ -155,7 +310,8 @@ async function monitorSignal(
     );
 
   if (
-    riskDistance <= 0
+    riskDistance <=
+    0
   ) {
     throw new Error(
       `${signal.symbol} has invalid risk distance`
@@ -164,7 +320,7 @@ async function monitorSignal(
 
   /*
    * HiddenAlpha TP1 = 1R.
-   * TP2 remains the final DB target.
+   * TP2 remains final DB target.
    */
 
   const takeProfit1Price =
@@ -181,19 +337,16 @@ async function monitorSignal(
   const nowIso =
     now.toISOString();
 
-  const publishedAt =
-    new Date(
-      signal.timestamp
-    );
+  /*
+   * ========================================
+   * ENTRY EXPIRATION
+   * ========================================
+   */
 
-  const ageMinutes =
-    Math.max(
-      0,
-      (
-        now.getTime() -
-        publishedAt.getTime()
-      ) /
-        60000
+  const publishedAt =
+    parseDate(
+      signal.timestamp,
+      `${signal.symbol} signal timestamp`
     );
 
   const maxWaitingAge =
@@ -201,187 +354,273 @@ async function monitorSignal(
       signal.timeframe
     );
 
-  let entryTriggered =
+  const entryDeadline =
+    new Date(
+      publishedAt.getTime() +
+        maxWaitingAge *
+          60_000
+    );
+
+  const entryDeadlineIso =
+    entryDeadline.toISOString();
+
+  /*
+   * ========================================
+   * OBSERVATION WINDOW
+   * ========================================
+   *
+   * Normal:
+   *
+   * last_checked_at → now
+   *
+   * First lifecycle run:
+   *
+   * signal timestamp → now
+   */
+
+  const observationStart =
+    signal.last_checked_at ??
+    signal.timestamp ??
+    signal.created_at;
+
+  if (
+    !observationStart
+  ) {
+    throw new Error(
+      `${signal.symbol} has no lifecycle observation start`
+    );
+  }
+
+  parseDate(
+    observationStart,
+    `${signal.symbol} lifecycle observation start`
+  );
+
+  /*
+   * ========================================
+   * 1M CANDLE REPLAY
+   * ========================================
+   */
+
+  const candles =
+    await getLifecycleCandles({
+      symbol:
+        signal.symbol,
+
+      fromTimestamp:
+        observationStart,
+
+      toTimestamp:
+        nowIso,
+    });
+
+  /*
+   * The candle reader currently caps the
+   * replay at 1000 rows.
+   *
+   * If we hit that cap AND the last returned
+   * candle is still far behind current time,
+   * we refuse to advance last_checked_at.
+   *
+   * Silent history loss would be worse than
+   * keeping the signal active for recovery.
+   */
+
+  if (
+    candles.length >=
+    1000
+  ) {
+    const lastCandle =
+      candles[
+        candles.length -
+          1
+      ];
+
+    const lastCandleTime =
+      new Date(
+        lastCandle.timestamp
+      ).getTime();
+
+    const gapToNowMs =
+      now.getTime() -
+      lastCandleTime;
+
+    if (
+      Number.isFinite(
+        lastCandleTime
+      ) &&
+      gapToNowMs >
+        2 *
+          60_000
+    ) {
+      throw new Error(
+        `${signal.symbol} lifecycle candle replay was truncated`
+      );
+    }
+  }
+
+  const alreadyEntered =
     Boolean(
       signal.entry_triggered_at
     );
 
-  /*
-   * ========================================
-   * PRICE CONDITIONS
-   * ========================================
-   */
-
-  const entryHit =
-    signal.direction ===
-    "LONG"
-      ? currentPrice >=
-        entryPrice
-      : currentPrice <=
-        entryPrice;
-
-  const stopHit =
-    signal.direction ===
-    "LONG"
-      ? currentPrice <=
-        stopLossPrice
-      : currentPrice >=
-        stopLossPrice;
-
-  const tp1Hit =
-    signal.direction ===
-    "LONG"
-      ? currentPrice >=
-        takeProfit1Price
-      : currentPrice <=
-        takeProfit1Price;
-
-  const tp2Hit =
-    signal.direction ===
-    "LONG"
-      ? currentPrice >=
-        takeProfit2Price
-      : currentPrice <=
-        takeProfit2Price;
+  const alreadyTp1 =
+    Boolean(
+      signal.tp1_hit_at
+    );
 
   /*
    * ========================================
-   * BEFORE ENTRY
+   * HISTORICAL RESOLUTION
    * ========================================
    */
 
-  if (!entryTriggered) {
-    /*
-     * Setup invalid before trade entry.
-     *
-     * This must NOT become a performance loss.
-     */
+  const historyResolution =
+    resolveLifecycle({
+      direction:
+        signal.direction,
 
-    if (stopHit) {
-      const updated =
-        await patchSignal(
-          signal.id,
-          {
-            status:
-              "INVALIDATED",
+      entryPrice,
 
-            lifecycle_phase:
-              "INVALIDATED",
+      stopLossPrice,
 
-            stop_hit_at:
-              nowIso,
+      takeProfit1Price,
 
-            last_price:
-              currentPrice,
+      takeProfit2Price,
 
-            last_checked_at:
-              nowIso,
-          }
-        );
+      entryTriggered:
+        alreadyEntered,
 
-      return {
-        signal: updated,
+      tp1Hit:
+        alreadyTp1,
 
-        phase:
-          "INVALIDATED" as LifecyclePhase,
+      candles,
 
-        performanceRecorded:
-          false,
-      };
-    }
+      entryDeadlineTimestamp:
+        alreadyEntered
+          ? null
+          : entryDeadlineIso,
 
-    /*
-     * Setup never triggered within its
-     * allowed waiting window.
-     */
+      observedUntilTimestamp:
+        nowIso,
+    });
 
-    if (
-      ageMinutes >
-      maxWaitingAge
-    ) {
-      const updated =
-        await patchSignal(
-          signal.id,
-          {
-            status:
-              "EXPIRED",
+  let resolution:
+    LifecycleResolution =
+      historyResolution;
 
-            lifecycle_phase:
-              "EXPIRED",
+  /*
+   * ========================================
+   * LIVE TICKER FALLBACK
+   * ========================================
+   *
+   * Candle replay detects intraminute levels.
+   *
+   * Ticker then covers the latest point in
+   * time in case stored candle data has not
+   * yet reflected the newest tick.
+   */
 
-            expired_at:
-              nowIso,
+  if (
+    !historyResolution.terminal
+  ) {
+    resolution =
+      resolveTickerPoint({
+        direction:
+          signal.direction,
 
-            last_price:
-              currentPrice,
+        entryPrice,
 
-            last_checked_at:
-              nowIso,
-          }
-        );
+        stopLossPrice,
 
-      return {
-        signal: updated,
+        takeProfit1Price,
 
-        phase:
-          "EXPIRED" as LifecyclePhase,
+        takeProfit2Price,
 
-        performanceRecorded:
-          false,
-      };
-    }
+        entryTriggered:
+          historyResolution.entryTriggered,
 
-    /*
-     * Still waiting for price to reach
-     * the frozen entry.
-     */
+        tp1Hit:
+          historyResolution.tp1Hit,
 
-    if (!entryHit) {
-      const updated =
-        await patchSignal(
-          signal.id,
-          {
-            lifecycle_phase:
-              "WAITING_ENTRY",
+        currentPrice,
 
-            last_price:
-              currentPrice,
-
-            last_checked_at:
-              nowIso,
-          }
-        );
-
-      return {
-        signal: updated,
-
-        phase:
-          "WAITING_ENTRY" as LifecyclePhase,
-
-        performanceRecorded:
-          false,
-      };
-    }
-
-    /*
-     * Entry is now triggered.
-     */
-
-    entryTriggered =
-      true;
+        nowIso,
+      });
   }
 
+  /*
+   * ========================================
+   * PRESERVE EVENT TIMES
+   * ========================================
+   *
+   * The ticker fallback only receives state
+   * booleans, so historical event timestamps
+   * are explicitly preserved here.
+   */
+
   const entryTriggeredAt =
-    signal.entry_triggered_at ??
-    nowIso;
+    firstDefinedTimestamp(
+      signal.entry_triggered_at,
+
+      historyResolution
+        .entryCandleTimestamp,
+
+      resolution
+        .entryCandleTimestamp,
+
+      resolution.entryTriggered
+        ? nowIso
+        : null
+    );
+
+  const tp1HitAt =
+    firstDefinedTimestamp(
+      signal.tp1_hit_at,
+
+      historyResolution
+        .tp1CandleTimestamp,
+
+      resolution
+        .tp1CandleTimestamp,
+
+      resolution.tp1Hit
+        ? nowIso
+        : null
+    );
+
+  const stopHitAt =
+    firstDefinedTimestamp(
+      resolution
+        .stopCandleTimestamp,
+
+      historyResolution
+        .stopCandleTimestamp,
+
+      nowIso
+    );
+
+  const tp2HitAt =
+    firstDefinedTimestamp(
+      resolution
+        .tp2CandleTimestamp,
+
+      historyResolution
+        .tp2CandleTimestamp,
+
+      nowIso
+    );
 
   /*
    * ========================================
-   * AFTER ENTRY — STOP LOSS
+   * TERMINAL — INVALIDATED BEFORE ENTRY
    * ========================================
    */
 
-  if (stopHit) {
+  if (
+    resolution.phase ===
+    "INVALIDATED"
+  ) {
     const updated =
       await patchSignal(
         signal.id,
@@ -390,12 +629,52 @@ async function monitorSignal(
             "INVALIDATED",
 
           lifecycle_phase:
-            "STOPPED",
-
-          entry_triggered_at:
-            entryTriggeredAt,
+            "INVALIDATED",
 
           stop_hit_at:
+            stopHitAt,
+
+          last_price:
+            currentPrice,
+
+          last_checked_at:
+            nowIso,
+        }
+      );
+
+    return {
+      signal:
+        updated,
+
+      phase:
+        "INVALIDATED" as LifecyclePhase,
+
+      performanceRecorded:
+        false,
+    };
+  }
+
+  /*
+   * ========================================
+   * TERMINAL — EXPIRED
+   * ========================================
+   */
+
+  if (
+    resolution.phase ===
+    "EXPIRED"
+  ) {
+    const updated =
+      await patchSignal(
+        signal.id,
+        {
+          status:
+            "EXPIRED",
+
+          lifecycle_phase:
+            "EXPIRED",
+
+          expired_at:
             nowIso,
 
           last_price:
@@ -406,8 +685,85 @@ async function monitorSignal(
         }
       );
 
+    return {
+      signal:
+        updated,
+
+      phase:
+        "EXPIRED" as LifecyclePhase,
+
+      performanceRecorded:
+        false,
+    };
+  }
+
+  /*
+   * ========================================
+   * TERMINAL — STOP
+   * ========================================
+   */
+
+  if (
+    resolution.phase ===
+    "STOPPED"
+  ) {
+    if (
+      !entryTriggeredAt
+    ) {
+      throw new Error(
+        `${signal.symbol} stopped without entry timestamp`
+      );
+    }
+
+    const patch:
+      Record<
+        string,
+        unknown
+      > = {
+        status:
+          "INVALIDATED",
+
+        lifecycle_phase:
+          "STOPPED",
+
+        entry_triggered_at:
+          entryTriggeredAt,
+
+        stop_hit_at:
+          stopHitAt,
+
+        last_price:
+          currentPrice,
+
+        last_checked_at:
+          nowIso,
+      };
+
     /*
-     * Record exactly the planned SL,
+     * If TP1 happened in an earlier candle
+     * before a later stop, preserve it.
+     *
+     * If TP1 + STOP occurred in the SAME
+     * ambiguous candle, resolver uses
+     * STOP-first and tp1Hit remains false.
+     */
+
+    if (
+      tp1HitAt &&
+      resolution.tp1Hit
+    ) {
+      patch.tp1_hit_at =
+        tp1HitAt;
+    }
+
+    const updated =
+      await patchSignal(
+        signal.id,
+        patch
+      );
+
+    /*
+     * Performance uses the frozen planned SL,
      * not temporary ticker slippage.
      */
 
@@ -417,7 +773,8 @@ async function monitorSignal(
     );
 
     return {
-      signal: updated,
+      signal:
+        updated,
 
       phase:
         "STOPPED" as LifecyclePhase,
@@ -429,11 +786,22 @@ async function monitorSignal(
 
   /*
    * ========================================
-   * AFTER ENTRY — TP2
+   * TERMINAL — TP2
    * ========================================
    */
 
-  if (tp2Hit) {
+  if (
+    resolution.phase ===
+    "TP2_HIT"
+  ) {
+    if (
+      !entryTriggeredAt
+    ) {
+      throw new Error(
+        `${signal.symbol} TP2 without entry timestamp`
+      );
+    }
+
     const updated =
       await patchSignal(
         signal.id,
@@ -448,11 +816,11 @@ async function monitorSignal(
             entryTriggeredAt,
 
           tp1_hit_at:
-            signal.tp1_hit_at ??
-            nowIso,
+            tp1HitAt ??
+            tp2HitAt,
 
           tp2_hit_at:
-            nowIso,
+            tp2HitAt,
 
           last_price:
             currentPrice,
@@ -463,7 +831,7 @@ async function monitorSignal(
       );
 
     /*
-     * Record exactly planned TP2.
+     * Performance uses exact planned TP2.
      */
 
     await recordSignalPerformance(
@@ -472,7 +840,8 @@ async function monitorSignal(
     );
 
     return {
-      signal: updated,
+      signal:
+        updated,
 
       phase:
         "TP2_HIT" as LifecyclePhase,
@@ -484,14 +853,22 @@ async function monitorSignal(
 
   /*
    * ========================================
-   * AFTER ENTRY — TP1
+   * NON-TERMINAL — TP1
    * ========================================
    */
 
   if (
-    tp1Hit ||
-    signal.tp1_hit_at
+    resolution.phase ===
+    "TP1_HIT"
   ) {
+    if (
+      !entryTriggeredAt
+    ) {
+      throw new Error(
+        `${signal.symbol} TP1 without entry timestamp`
+      );
+    }
+
     const updated =
       await patchSignal(
         signal.id,
@@ -503,7 +880,7 @@ async function monitorSignal(
             entryTriggeredAt,
 
           tp1_hit_at:
-            signal.tp1_hit_at ??
+            tp1HitAt ??
             nowIso,
 
           last_price:
@@ -515,7 +892,8 @@ async function monitorSignal(
       );
 
     return {
-      signal: updated,
+      signal:
+        updated,
 
       phase:
         "TP1_HIT" as LifecyclePhase,
@@ -527,7 +905,55 @@ async function monitorSignal(
 
   /*
    * ========================================
-   * ACTIVE TRADE
+   * NON-TERMINAL — ENTRY
+   * ========================================
+   */
+
+  if (
+    resolution.phase ===
+    "ENTRY_TRIGGERED"
+  ) {
+    if (
+      !entryTriggeredAt
+    ) {
+      throw new Error(
+        `${signal.symbol} entry state missing timestamp`
+      );
+    }
+
+    const updated =
+      await patchSignal(
+        signal.id,
+        {
+          lifecycle_phase:
+            "ENTRY_TRIGGERED",
+
+          entry_triggered_at:
+            entryTriggeredAt,
+
+          last_price:
+            currentPrice,
+
+          last_checked_at:
+            nowIso,
+        }
+      );
+
+    return {
+      signal:
+        updated,
+
+      phase:
+        "ENTRY_TRIGGERED" as LifecyclePhase,
+
+      performanceRecorded:
+        false,
+    };
+  }
+
+  /*
+   * ========================================
+   * NON-TERMINAL — WAITING ENTRY
    * ========================================
    */
 
@@ -536,10 +962,7 @@ async function monitorSignal(
       signal.id,
       {
         lifecycle_phase:
-          "ENTRY_TRIGGERED",
-
-        entry_triggered_at:
-          entryTriggeredAt,
+          "WAITING_ENTRY",
 
         last_price:
           currentPrice,
@@ -550,10 +973,11 @@ async function monitorSignal(
     );
 
   return {
-    signal: updated,
+    signal:
+      updated,
 
     phase:
-      "ENTRY_TRIGGERED" as LifecyclePhase,
+      "WAITING_ENTRY" as LifecyclePhase,
 
     performanceRecorded:
       false,
@@ -567,26 +991,30 @@ export async function monitorActiveSignals() {
   const {
     data,
     error,
-  } = await supabase
-    .from("trading_signals")
-    .select("*")
-    .eq(
-      "status",
-      "ACTIVE"
-    )
-    .in(
-      "direction",
-      [
-        "LONG",
-        "SHORT",
-      ]
-    )
-    .order(
-      "timestamp",
-      {
-        ascending: true,
-      }
-    );
+  } =
+    await supabase
+      .from(
+        "trading_signals"
+      )
+      .select("*")
+      .eq(
+        "status",
+        "ACTIVE"
+      )
+      .in(
+        "direction",
+        [
+          "LONG",
+          "SHORT",
+        ]
+      )
+      .order(
+        "timestamp",
+        {
+          ascending:
+            true,
+        }
+      );
 
   if (error) {
     throw new Error(
@@ -614,7 +1042,8 @@ export async function monitorActiveSignals() {
               );
 
             return {
-              success: true,
+              success:
+                true,
 
               signalId:
                 signal.id,
@@ -624,9 +1053,13 @@ export async function monitorActiveSignals() {
 
               ...result,
             };
-          } catch (error) {
+          } catch (
+            error:
+              unknown
+          ) {
             return {
-              success: false,
+              success:
+                false,
 
               signalId:
                 signal.id,
