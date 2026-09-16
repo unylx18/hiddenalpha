@@ -7,105 +7,296 @@ import {
   type TradingPipelineInput,
 } from "@/lib/trading/pipeline/service";
 
-export type DeskCycleInput =
-  TradingPipelineInput;
+import {
+  acquireRuntimeLock,
+  releaseRuntimeLock,
+  type RuntimeLock,
+} from "@/lib/trading/pipeline/runtime-lock-service";
+
+const DESK_LOCK_NAME =
+  "hiddenalpha:desk-cycle";
+
+const DESK_LOCK_TTL_SECONDS =
+  240;
 
 export async function runDeskCycle(
-  input: DeskCycleInput = {}
+  input: TradingPipelineInput = {}
 ) {
   const cycleStartedAt =
     performance.now();
 
-  /*
-   * ========================================
-   * STAGE 1 — MARKET DATA SYNC
-   * ========================================
-   *
-   * Server-side source of fresh candle data.
-   *
-   * The trading pipeline must never run
-   * against a partially failed market sync.
-   */
+  let lock:
+    RuntimeLock | null =
+    null;
 
-  const marketStartedAt =
-    performance.now();
+  let lockDurationMs =
+    0;
 
-  const marketResults =
-    await syncBybitMarkets();
+  let marketSyncDurationMs =
+    0;
 
-  const marketDurationMs =
-    performance.now() -
-    marketStartedAt;
+  let pipelineDurationMs =
+    0;
 
-  const marketSuccessCount =
-    marketResults.filter(
-      (result) =>
-        result.success
-    ).length;
+  let result:
+    Record<string, unknown>;
 
-  const marketFailedCount =
-    marketResults.filter(
-      (result) =>
-        !result.success
-    ).length;
+  try {
+    /*
+     * ========================================
+     * STAGE 0 — DISTRIBUTED RUNTIME LOCK
+     * ========================================
+     *
+     * Only one server instance may execute the
+     * official HiddenAlpha desk cycle at once.
+     */
 
-  const market = {
-    provider:
-      "bybit",
+    const lockStartedAt =
+      performance.now();
 
-    total:
-      marketResults.length,
+    lock =
+      await acquireRuntimeLock(
+        DESK_LOCK_NAME,
+        DESK_LOCK_TTL_SECONDS
+      );
 
-    successCount:
-      marketSuccessCount,
+    lockDurationMs =
+      performance.now() -
+      lockStartedAt;
 
-    failedCount:
-      marketFailedCount,
+    /*
+     * Another scheduler request already owns
+     * the desk.
+     *
+     * This is a healthy skip, not an error.
+     */
+    if (!lock.acquired) {
+      return {
+        success: true,
 
-    results:
-      marketResults,
+        skipped: true,
 
-    durationMs:
-      Math.round(
-        marketDurationMs
-      ),
-  };
+        stage:
+          "LOCKED",
 
-  /*
-   * ========================================
-   * MARKET DATA SAFETY GATE
-   * ========================================
-   *
-   * No signal lifecycle / publication should
-   * run from a partially failed market cycle.
-   */
+        timestamp:
+          new Date().toISOString(),
 
-  if (
-    marketFailedCount >
-    0
-  ) {
-    return {
-      success: false,
+        message:
+          "Another HiddenAlpha desk cycle is already running.",
+
+        marketSync:
+          null,
+
+        pipeline:
+          null,
+
+        lock: {
+          acquired:
+            false,
+
+          name:
+            DESK_LOCK_NAME,
+        },
+
+        timing: {
+          lockMs:
+            Math.round(
+              lockDurationMs
+            ),
+
+          marketSyncMs:
+            0,
+
+          pipelineMs:
+            0,
+
+          totalMs:
+            Math.round(
+              performance.now() -
+                cycleStartedAt
+            ),
+        },
+      };
+    }
+
+    /*
+     * ========================================
+     * STAGE 1 — MARKET SYNC
+     * ========================================
+     */
+
+    const marketSyncStartedAt =
+      performance.now();
+
+    const marketSync =
+      await syncBybitMarkets();
+
+    marketSyncDurationMs =
+      performance.now() -
+      marketSyncStartedAt;
+
+    const marketSyncSuccess =
+      marketSync.filter(
+        (item) =>
+          item.success
+      );
+
+    const marketSyncFailed =
+      marketSync.filter(
+        (item) =>
+          !item.success
+      );
+
+    /*
+     * Never run lifecycle / publisher against
+     * partially failed market data.
+     */
+    if (
+      marketSyncFailed.length >
+      0
+    ) {
+      result = {
+        success:
+          false,
+
+        skipped:
+          false,
+
+        stage:
+          "MARKET_SYNC_FAILED",
+
+        timestamp:
+          new Date().toISOString(),
+
+        marketSync: {
+          total:
+            marketSync.length,
+
+          success:
+            marketSyncSuccess.length,
+
+          failed:
+            marketSyncFailed.length,
+
+          results:
+            marketSync,
+        },
+
+        pipeline:
+          null,
+
+        lock: {
+          acquired:
+            true,
+
+          name:
+            DESK_LOCK_NAME,
+        },
+
+        timing: {
+          lockMs:
+            Math.round(
+              lockDurationMs
+            ),
+
+          marketSyncMs:
+            Math.round(
+              marketSyncDurationMs
+            ),
+
+          pipelineMs:
+            0,
+
+          totalMs:
+            Math.round(
+              performance.now() -
+                cycleStartedAt
+            ),
+        },
+      };
+
+      return result;
+    }
+
+    /*
+     * ========================================
+     * STAGE 2 — OFFICIAL TRADING PIPELINE
+     * ========================================
+     *
+     * Lifecycle
+     *    ↓
+     * Scanner
+     *    ↓
+     * Publisher
+     *    ↓
+     * Persistent signal
+     */
+
+    const pipelineStartedAt =
+      performance.now();
+
+    const pipeline =
+      await runTradingPipeline(
+        input
+      );
+
+    pipelineDurationMs =
+      performance.now() -
+      pipelineStartedAt;
+
+    result = {
+      success:
+        true,
+
+      skipped:
+        false,
+
+      stage:
+        "COMPLETED",
 
       timestamp:
         new Date().toISOString(),
 
-      stage:
-        "MARKET_SYNC_FAILED" as const,
+      marketSync: {
+        total:
+          marketSync.length,
 
-      market,
+        success:
+          marketSyncSuccess.length,
 
-      pipeline:
-        null,
+        failed:
+          0,
+
+        results:
+          marketSync,
+      },
+
+      pipeline,
+
+      lock: {
+        acquired:
+          true,
+
+        name:
+          DESK_LOCK_NAME,
+      },
 
       timing: {
-        marketMs:
+        lockMs:
           Math.round(
-            marketDurationMs
+            lockDurationMs
+          ),
+
+        marketSyncMs:
+          Math.round(
+            marketSyncDurationMs
           ),
 
         pipelineMs:
-          0,
+          Math.round(
+            pipelineDurationMs
+          ),
 
         totalMs:
           Math.round(
@@ -114,69 +305,95 @@ export async function runDeskCycle(
           ),
       },
     };
+
+    return result;
+  } catch (
+    error:
+      unknown
+  ) {
+    return {
+      success:
+        false,
+
+      skipped:
+        false,
+
+      stage:
+        "DESK_CYCLE_ERROR",
+
+      timestamp:
+        new Date().toISOString(),
+
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unknown desk cycle error",
+
+      marketSync:
+        null,
+
+      pipeline:
+        null,
+
+      lock: {
+        acquired:
+          lock?.acquired ??
+          false,
+
+        name:
+          DESK_LOCK_NAME,
+      },
+
+      timing: {
+        lockMs:
+          Math.round(
+            lockDurationMs
+          ),
+
+        marketSyncMs:
+          Math.round(
+            marketSyncDurationMs
+          ),
+
+        pipelineMs:
+          Math.round(
+            pipelineDurationMs
+          ),
+
+        totalMs:
+          Math.round(
+            performance.now() -
+              cycleStartedAt
+          ),
+      },
+    };
+  } finally {
+    /*
+     * ========================================
+     * ALWAYS RELEASE OWNED LOCK
+     * ========================================
+     *
+     * Only the UUID owner can release it.
+     *
+     * If release itself fails, the PostgreSQL
+     * TTL will still recover the lock.
+     */
+    if (
+      lock?.acquired
+    ) {
+      try {
+        await releaseRuntimeLock(
+          lock
+        );
+      } catch (
+        releaseError:
+          unknown
+      ) {
+        console.error(
+          "[HiddenAlpha] Failed to release desk runtime lock",
+          releaseError
+        );
+      }
+    }
   }
-
-  /*
-   * ========================================
-   * STAGE 2 — TRADING PIPELINE
-   * ========================================
-   *
-   * Market data is now fresh.
-   *
-   * Lifecycle
-   *    ↓
-   * Publisher
-   *    ↓
-   * Active Signal Snapshot
-   */
-
-  const pipelineStartedAt =
-    performance.now();
-
-  const pipeline =
-    await runTradingPipeline(
-      input
-    );
-
-  const pipelineDurationMs =
-    performance.now() -
-    pipelineStartedAt;
-
-  /*
-   * ========================================
-   * AUTHORITATIVE DESK RESULT
-   * ========================================
-   */
-
-  return {
-    success: true,
-
-    timestamp:
-      new Date().toISOString(),
-
-    stage:
-      "COMPLETED" as const,
-
-    market,
-
-    pipeline,
-
-    timing: {
-      marketMs:
-        Math.round(
-          marketDurationMs
-        ),
-
-      pipelineMs:
-        Math.round(
-          pipelineDurationMs
-        ),
-
-      totalMs:
-        Math.round(
-          performance.now() -
-            cycleStartedAt
-        ),
-    },
-  };
 }

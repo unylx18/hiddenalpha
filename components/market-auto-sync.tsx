@@ -1,20 +1,14 @@
 "use client";
 
-import {
-  useEffect,
-} from "react";
+import { useEffect } from "react";
 
-const SYNC_INTERVAL_MS =
-  60_000;
+const SYNC_INTERVAL_MS = 60_000;
 
-const STARTUP_RETRY_MS =
-  5_000;
+const STARTUP_RETRY_MS = 5_000;
 
-const MAX_STARTUP_RETRIES =
-  3;
+const MAX_STARTUP_RETRIES = 3;
 
-const MIN_TRIGGER_GAP_MS =
-  5_000;
+const MIN_TRIGGER_GAP_MS = 5_000;
 
 export const MARKET_SYNC_COMPLETE_EVENT =
   "hiddenalpha:market-sync-complete";
@@ -22,30 +16,23 @@ export const MARKET_SYNC_COMPLETE_EVENT =
 export const MARKET_SYNC_START_EVENT =
   "hiddenalpha:market-sync-start";
 
+/*
+ * Kept for backwards compatibility.
+ *
+ * Browser-side trading pipeline execution has been disabled.
+ * The official lifecycle + publisher pipeline is now executed
+ * only by the secure server scheduler.
+ */
 export const SIGNAL_PIPELINE_COMPLETE_EVENT =
   "hiddenalpha:signal-pipeline-complete";
 
 export const SIGNAL_PIPELINE_START_EVENT =
   "hiddenalpha:signal-pipeline-start";
 
-/*
- * ========================================
- * MODULE LEVEL DESK STATE
- * ========================================
- *
- * HiddenAlphaShell may remount when navigating
- * between pages.
- *
- * Keeping these outside the component prevents
- * multiple overlapping desk cycles.
- */
+let activeCycle: Promise<boolean> | null =
+  null;
 
-let activeCycle:
-  Promise<boolean> | null =
-    null;
-
-let lastCycleStartedAt =
-  0;
+let lastCycleStartedAt = 0;
 
 type CycleReason =
   | "startup"
@@ -57,37 +44,34 @@ type CycleReason =
   | "startup-retry";
 
 type CycleOptions = {
-  reason:
-    CycleReason;
-
+  reason: CycleReason;
   force?: boolean;
+};
+
+type ApiResult = {
+  success?: boolean;
+  [key: string]: unknown;
 };
 
 async function readJsonSafe(
   response: Response
-): Promise<any> {
+): Promise<ApiResult | null> {
   try {
-    return await response.json();
+    return (await response.json()) as ApiResult;
   } catch {
     return null;
   }
 }
 
-async function executeDeskCycle(
+async function executeMarketSyncCycle(
   reason: CycleReason
 ): Promise<boolean> {
   const cycleStartedAt =
     performance.now();
 
   console.info(
-    `[HiddenAlpha] Desk cycle started: ${reason}`
+    `[HiddenAlpha] Browser market sync started: ${reason}`
   );
-
-  /*
-   * ========================================
-   * STAGE 1 — MARKET SYNC
-   * ========================================
-   */
 
   window.dispatchEvent(
     new CustomEvent(
@@ -95,7 +79,7 @@ async function executeDeskCycle(
       {
         detail: {
           reason,
-
+          source: "browser",
           timestamp:
             new Date().toISOString(),
         },
@@ -106,6 +90,19 @@ async function executeDeskCycle(
   document.documentElement.dataset.marketSyncReady =
     "syncing";
 
+  /*
+   * Trading pipeline state is now server-managed.
+   *
+   * The browser must never call:
+   *
+   * /api/trading/pipeline
+   *
+   * because publishing official signals from both
+   * browser and scheduler could create race conditions.
+   */
+  document.documentElement.dataset.signalPipelineReady =
+    "server-managed";
+
   const syncStartedAt =
     performance.now();
 
@@ -115,8 +112,7 @@ async function executeDeskCycle(
       {
         method: "POST",
 
-        cache:
-          "no-store",
+        cache: "no-store",
 
         headers: {
           "Cache-Control":
@@ -138,7 +134,7 @@ async function executeDeskCycle(
       "error";
 
     console.warn(
-      "[HiddenAlpha] Market sync failed",
+      "[HiddenAlpha] Browser market sync failed",
       {
         reason,
         status:
@@ -165,6 +161,9 @@ async function executeDeskCycle(
         detail: {
           reason,
 
+          source:
+            "browser",
+
           timestamp:
             new Date().toISOString(),
 
@@ -178,150 +177,18 @@ async function executeDeskCycle(
     )
   );
 
-  console.info(
-    `[HiddenAlpha] Market sync completed in ${(syncDurationMs / 1000).toFixed(
-      2
-    )}s`
-  );
-
-  /*
-   * ========================================
-   * STAGE 2 — TRADING PIPELINE
-   * ========================================
-   *
-   * Only run after market sync succeeds.
-   *
-   * Lifecycle
-   *    ↓
-   * Scanner
-   *    ↓
-   * Publisher
-   *    ↓
-   * Persistent Active Signal
-   */
-
-  window.dispatchEvent(
-    new CustomEvent(
-      SIGNAL_PIPELINE_START_EVENT,
-      {
-        detail: {
-          reason,
-
-          timestamp:
-            new Date().toISOString(),
-        },
-      }
-    )
-  );
-
-  document.documentElement.dataset.signalPipelineReady =
-    "processing";
-
-  const pipelineStartedAt =
-    performance.now();
-
-  const pipelineResponse =
-    await fetch(
-      "/api/trading/pipeline",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-
-          "Cache-Control":
-            "no-cache",
-        },
-
-        body:
-          JSON.stringify({
-            accountBalance:
-              10000,
-
-            riskPercent:
-              1,
-
-            leverage:
-              1,
-
-            symbols: [
-              "BTCUSDT",
-              "ETHUSDT",
-              "SOLUSDT",
-            ],
-          }),
-
-        cache:
-          "no-store",
-      }
-    );
-
-  const pipelineData =
-    await readJsonSafe(
-      pipelineResponse
-    );
-
-  if (
-    !pipelineResponse.ok ||
-    !pipelineData?.success
-  ) {
-    document.documentElement.dataset.signalPipelineReady =
-      "error";
-
-    console.warn(
-      "[HiddenAlpha] Signal pipeline failed",
-      {
-        reason,
-        status:
-          pipelineResponse.status,
-        result:
-          pipelineData,
-      }
-    );
-
-    return false;
-  }
-
-  const pipelineDurationMs =
-    performance.now() -
-    pipelineStartedAt;
-
-  document.documentElement.dataset.signalPipelineReady =
-    "true";
-
-  window.dispatchEvent(
-    new CustomEvent(
-      SIGNAL_PIPELINE_COMPLETE_EVENT,
-      {
-        detail: {
-          reason,
-
-          timestamp:
-            new Date().toISOString(),
-
-          durationMs:
-            pipelineDurationMs,
-
-          result:
-            pipelineData,
-        },
-      }
-    )
-  );
-
   const cycleDurationMs =
     performance.now() -
     cycleStartedAt;
 
   console.info(
-    `[HiddenAlpha] Signal pipeline completed in ${(pipelineDurationMs / 1000).toFixed(
+    `[HiddenAlpha] Browser market sync completed in ${(syncDurationMs / 1000).toFixed(
       2
     )}s`
   );
 
   console.info(
-    `[HiddenAlpha] Desk cycle finished in ${(cycleDurationMs / 1000).toFixed(
+    `[HiddenAlpha] Browser refresh cycle finished in ${(cycleDurationMs / 1000).toFixed(
       2
     )}s`
   );
@@ -329,15 +196,14 @@ async function executeDeskCycle(
   return true;
 }
 
-function runSharedDeskCycle({
+function runSharedMarketSync({
   reason,
   force = false,
 }: CycleOptions): Promise<boolean> {
   /*
-   * Do not perform background browser work
+   * Do not perform browser background work
    * unless explicitly forced.
    */
-
   if (
     !force &&
     document.visibilityState !==
@@ -349,17 +215,12 @@ function runSharedDeskCycle({
   }
 
   /*
-   * A cycle is already running.
-   *
-   * Reuse the same promise instead of
-   * starting another Market Sync + Pipeline.
+   * Reuse an already-running sync instead of
+   * creating overlapping browser requests.
    */
-
-  if (
-    activeCycle
-  ) {
+  if (activeCycle) {
     console.info(
-      `[HiddenAlpha] Desk cycle skipped (${reason}) — another cycle is already running`
+      `[HiddenAlpha] Browser market sync skipped (${reason}) — another sync is already running`
     );
 
     return activeCycle;
@@ -369,13 +230,9 @@ function runSharedDeskCycle({
     Date.now();
 
   /*
-   * Focus + visibility + pageshow can fire
+   * Visibility, focus and pageshow can fire
    * almost simultaneously.
-   *
-   * Avoid running the entire engine several
-   * times within a few seconds.
    */
-
   if (
     !force &&
     now -
@@ -391,7 +248,7 @@ function runSharedDeskCycle({
     now;
 
   activeCycle =
-    executeDeskCycle(
+    executeMarketSyncCycle(
       reason
     )
       .catch(
@@ -400,7 +257,7 @@ function runSharedDeskCycle({
             unknown
         ) => {
           console.warn(
-            "[HiddenAlpha] Desk cycle error",
+            "[HiddenAlpha] Browser market sync error",
             error
           );
 
@@ -408,7 +265,7 @@ function runSharedDeskCycle({
             "error";
 
           document.documentElement.dataset.signalPipelineReady =
-            "error";
+            "server-managed";
 
           return false;
         }
@@ -428,42 +285,36 @@ export default function MarketAutoSync() {
 
     let retryTimer:
       number | null =
-        null;
+      null;
 
     /*
      * ========================================
-     * STARTUP SYNC
+     * STARTUP MARKET REFRESH
      * ========================================
      *
-     * Every time HiddenAlpha boots:
+     * Browser responsibility:
      *
-     * 1. Sync fresh market candles
-     * 2. Run trading pipeline
-     * 3. Notify all dashboard components
+     * 1. Refresh market candles
+     * 2. Notify dashboard components
      *
-     * Startup is forced even if the browser
-     * visibility state has not settled yet.
+     * Trading pipeline is intentionally NOT
+     * executed here.
      */
-
     async function runStartup(
       attempt = 0
     ) {
-      if (
-        cancelled
-      ) {
+      if (cancelled) {
         return;
       }
 
       const success =
-        await runSharedDeskCycle({
+        await runSharedMarketSync({
           reason:
-            attempt ===
-            0
+            attempt === 0
               ? "startup"
               : "startup-retry",
 
-          force:
-            true,
+          force: true,
         });
 
       if (
@@ -473,21 +324,12 @@ export default function MarketAutoSync() {
         return;
       }
 
-      /*
-       * Dev server / API routes can still be
-       * warming up during the first browser
-       * request.
-       *
-       * Retry automatically instead of leaving
-       * the desk stale for a full minute.
-       */
-
       if (
         attempt <
         MAX_STARTUP_RETRIES
       ) {
         console.warn(
-          `[HiddenAlpha] Startup cycle failed. Retrying in ${
+          `[HiddenAlpha] Startup market sync failed. Retrying in ${
             STARTUP_RETRY_MS /
             1000
           }s...`
@@ -497,8 +339,7 @@ export default function MarketAutoSync() {
           window.setTimeout(
             () => {
               void runStartup(
-                attempt +
-                  1
+                attempt + 1
               );
             },
             STARTUP_RETRY_MS
@@ -506,18 +347,20 @@ export default function MarketAutoSync() {
       }
     }
 
+    document.documentElement.dataset.signalPipelineReady =
+      "server-managed";
+
     void runStartup();
 
     /*
      * ========================================
-     * 60 SECOND DESK LOOP
+     * 60 SECOND BROWSER MARKET REFRESH
      * ========================================
      */
-
     const interval =
       window.setInterval(
         () => {
-          void runSharedDeskCycle({
+          void runSharedMarketSync({
             reason:
               "interval",
           });
@@ -530,55 +373,38 @@ export default function MarketAutoSync() {
      * USER RETURNS TO TAB
      * ========================================
      */
-
     function handleVisibility() {
       if (
         document.visibilityState ===
         "visible"
       ) {
-        void runSharedDeskCycle({
+        void runSharedMarketSync({
           reason:
             "visibility",
         });
       }
     }
 
-    /*
-     * Window focus gives another recovery
-     * mechanism after laptop sleep or when
-     * returning from another application.
-     */
-
     function handleFocus() {
-      void runSharedDeskCycle({
+      void runSharedMarketSync({
         reason:
           "focus",
       });
     }
 
-    /*
-     * Handles browser back-forward cache.
-     */
-
     function handlePageShow() {
-      void runSharedDeskCycle({
+      void runSharedMarketSync({
         reason:
           "pageshow",
       });
     }
 
-    /*
-     * If internet disappears and comes back,
-     * immediately refresh market intelligence.
-     */
-
     function handleOnline() {
-      void runSharedDeskCycle({
+      void runSharedMarketSync({
         reason:
           "online",
 
-        force:
-          true,
+        force: true,
       });
     }
 
