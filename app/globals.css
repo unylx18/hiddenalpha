@@ -1,26 +1,190 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --ha-bg: #05070b;
+  --ha-bg-soft: #07090d;
+
+  --ha-sidebar: #07090d;
+  --ha-topbar: #080a0f;
+
+  --ha-panel: #090c12;
+  --ha-panel-soft: #0b0e15;
+  --ha-panel-hover: #0e1119;
+
+  --ha-border: rgba(255, 255, 255, 0.065);
+  --ha-border-strong: rgba(255, 255, 255, 0.1);
+
+  --ha-text: #f4f4f5;
+  --ha-text-secondary: #a1a1aa;
+  --ha-text-muted: #52525b;
+
+  --ha-purple: #7c3aed;
+  --ha-purple-bright: #8b5cf6;
+  --ha-purple-soft: rgba(124, 58, 237, 0.12);
+
+  --ha-green: #34d399;
+  --ha-red: #fb7185;
+  --ha-amber: #fbbf24;
+  --ha-cyan: #22d3ee;
+
+  --ha-radius-sm: 8px;
+  --ha-radius-md: 12px;
+  --ha-radius-lg: 16px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--ha-bg);
+  --color-foreground: var(--ha-text);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--ha-bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+
+  background:
+    radial-gradient(
+      circle at 48% -15%,
+      rgba(124, 58, 237, 0.07),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(34, 211, 238, 0.025),
+      transparent 25%
+    ),
+    var(--ha-bg);
+
+  color: var(--ha-text);
+  font-family:
+    var(--font-geist-sans),
+    Arial,
+    Helvetica,
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(124, 58, 237, 0.35);
+  color: white;
+}
+
+/* HiddenAlpha scrollbar */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color:
+    rgba(113, 113, 122, 0.45)
+    transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(113, 113, 122, 0.4);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5);
+}
+
+/* Reusable HiddenAlpha primitives */
+
+.ha-panel {
+  border: 1px solid var(--ha-border);
+  border-radius: var(--ha-radius-lg);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.012),
+      transparent 60%
+    ),
+    var(--ha-panel);
+}
+
+.ha-panel-hover {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.ha-panel-hover:hover {
+  border-color: var(--ha-border-strong);
+  background-color: var(--ha-panel-hover);
+}
+
+.ha-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ha-text-muted);
+}
+
+.ha-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ha-green);
+  box-shadow:
+    0 0 0 3px rgba(52, 211, 153, 0.07),
+    0 0 12px rgba(52, 211, 153, 0.4);
+}
+
+.ha-grid-bg {
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px
+    );
+
+  background-size: 32px 32px;
+}
+
+.ha-purple-glow {
+  box-shadow:
+    0 0 0 1px rgba(124, 58, 237, 0.12),
+    0 12px 40px rgba(76, 29, 149, 0.08);
+}
+
+.ha-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
 }

@@ -1,0 +1,55 @@
+name: HiddenAlpha Desk Cycle
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+  workflow_dispatch:
+
+concurrency:
+  group: hiddenalpha-desk-cycle
+  cancel-in-progress: false
+
+jobs:
+  run-desk-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Trigger HiddenAlpha Desk Cycle
+        env:
+          CRON_SECRET: ${{ secrets.HIDDENALPHA_CRON_SECRET }}
+        run: |
+          set -e
+
+          echo "Triggering HiddenAlpha production desk cycle..."
+
+          response_file="$(mktemp)"
+
+          http_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --location \
+              --connect-timeout 15 \
+              --max-time 220 \
+              --retry 2 \
+              --retry-delay 5 \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --request GET \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              "https://hiddenalpha.vercel.app/api/cron/desk"
+          )"
+
+          cat "$response_file"
+
+          echo ""
+          echo "HTTP Status: ${http_code}"
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "HiddenAlpha desk cycle failed."
+            exit 1
+          fi
+
+          echo "HiddenAlpha desk cycle completed successfully."

@@ -1,367 +1,1143 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import MarketCandleChart from "@/components/markets/market-candle-chart";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
   Activity,
+  ArrowDownRight,
   ArrowUpRight,
   BarChart3,
-  Bell,
-  Bot,
-  ChevronDown,
-  Home,
-  LineChart,
-  Search,
-  Settings,
-  ShieldCheck,
-  Star,
+  BrainCircuit,
+  Gauge,
+  Radio,
+  RefreshCw,
+  ShieldAlert,
   TrendingDown,
   TrendingUp,
-  Wallet,
-  Wifi,
-  Zap,
+  Waves,
 } from "lucide-react";
+
+import HiddenAlphaShell from "@/components/hiddenalpha-shell";
+import MarketCandleChart from "@/components/markets/market-candle-chart";
 
 import {
   createBybitTickerSocket,
   BybitLiveTicker,
 } from "@/lib/market-data/bybit-live";
 
+type Direction =
+  | "BULLISH"
+  | "BEARISH"
+  | "NEUTRAL";
+
 type Market = {
   symbol: string;
-  exchange: string;
-  marketType: string;
+
   price: number | null;
   change24h: number | null;
+
   bidPrice: number | null;
   askPrice: number | null;
   markPrice: number | null;
-  regime: "BULLISH" | "BEARISH" | "NEUTRAL";
+
+  bias: Direction;
+
   score: number | null;
   confidence: number | null;
+
+  trendDirection: Direction;
+  trendStrength: number | null;
+
+  momentumDirection: Direction;
+  momentumStrength: number | null;
+
+  volumeCondition: string;
   volumeRatio: number | null;
+
+  volatilityLevel: string;
+  volatilityPercentage: number | null;
+
   rsi: number | null;
   ema20: number | null;
   ema50: number | null;
   atr: number | null;
 };
 
-const navigation = [
-  { label: "Overview", icon: Home },
-  { label: "Signals", icon: Zap },
-  { label: "Markets", icon: BarChart3 },
-  { label: "Scanner", icon: Search },
-  { label: "Watchlist", icon: Star },
-  { label: "AI Analyst", icon: Bot },
-  { label: "Risk", icon: ShieldCheck },
-  { label: "Performance", icon: Activity },
-  { label: "Portfolio", icon: Wallet },
-  { label: "Settings", icon: Settings },
+type MtfContext = {
+  timeframe: string;
+
+  bias: Direction;
+
+  score: number | null;
+  confidence: number | null;
+
+  trendDirection: Direction;
+  momentumDirection: Direction;
+
+  volumeCondition: string;
+  volatilityLevel: string;
+
+  success: boolean;
+};
+
+type BreadthAsset = {
+  symbol: string;
+
+  contexts: MtfContext[];
+
+  dominantBias: Direction;
+
+  alignment: number;
+
+  compositeScore: number;
+};
+
+const SYMBOLS = [
+  "BTCUSDT",
+  "ETHUSDT",
+  "SOLUSDT",
 ];
 
-const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+const CHART_TIMEFRAMES = [
+  "1m",
+  "5m",
+  "15m",
+  "1h",
+];
 
-const timeframes = ["1m", "5m", "15m", "1h"];
+const MTF_TIMEFRAMES = [
+  "1m",
+  "5m",
+  "15m",
+  "1h",
+];
 
-const emptyMarkets: Market[] = symbols.map((symbol) => ({
-  symbol,
-  exchange: "Bybit",
-  marketType: "PERPETUAL",
-  price: null,
-  change24h: null,
-  bidPrice: null,
-  askPrice: null,
-  markPrice: null,
-  regime: "NEUTRAL",
-  score: null,
-  confidence: null,
-  volumeRatio: null,
-  rsi: null,
-  ema20: null,
-  ema50: null,
-  atr: null,
-}));
+const emptyMarkets: Market[] =
+  SYMBOLS.map(
+    (symbol) => ({
+      symbol,
 
-function formatPrice(value: number | null) {
-  if (value === null) return "—";
+      price: null,
+      change24h: null,
 
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+      bidPrice: null,
+      askPrice: null,
+      markPrice: null,
+
+      bias: "NEUTRAL",
+
+      score: null,
+      confidence: null,
+
+      trendDirection:
+        "NEUTRAL",
+
+      trendStrength: null,
+
+      momentumDirection:
+        "NEUTRAL",
+
+      momentumStrength:
+        null,
+
+      volumeCondition:
+        "—",
+
+      volumeRatio: null,
+
+      volatilityLevel:
+        "—",
+
+      volatilityPercentage:
+        null,
+
+      rsi: null,
+      ema20: null,
+      ema50: null,
+      atr: null,
+    })
+  );
+
+function numberValue(
+  value: unknown
+) {
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(
+    parsed
+  )
+    ? parsed
+    : null;
 }
 
-function formatNumber(value: number | null, digits = 2) {
-  if (value === null) return "—";
+function normalizeDirection(
+  value: unknown
+): Direction {
+  if (
+    value === "BULLISH"
+  ) {
+    return "BULLISH";
+  }
 
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  if (
+    value === "BEARISH"
+  ) {
+    return "BEARISH";
+  }
+
+  return "NEUTRAL";
+}
+
+function formatPrice(
+  value:
+    | number
+    | null
+) {
+  if (
+    value === null ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  if (value >= 1000) {
+    return value.toLocaleString(
+      "en-US",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }
+    );
+  }
+
+  if (value >= 1) {
+    return value.toLocaleString(
+      "en-US",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }
+    );
+  }
+
+  return value.toLocaleString(
+    "en-US",
+    {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 6,
+    }
+  );
+}
+
+function formatNumber(
+  value:
+    | number
+    | null,
+  digits = 1
+) {
+  if (
+    value === null ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  return value.toFixed(
+    digits
+  );
+}
+
+function directionClass(
+  direction: Direction
+) {
+  if (
+    direction ===
+    "BULLISH"
+  ) {
+    return "text-emerald-400";
+  }
+
+  if (
+    direction ===
+    "BEARISH"
+  ) {
+    return "text-red-400";
+  }
+
+  return "text-zinc-500";
+}
+
+function directionBg(
+  direction: Direction
+) {
+  if (
+    direction ===
+    "BULLISH"
+  ) {
+    return "border-emerald-500/10 bg-emerald-500/[0.06]";
+  }
+
+  if (
+    direction ===
+    "BEARISH"
+  ) {
+    return "border-red-500/10 bg-red-500/[0.06]";
+  }
+
+  return "border-white/[0.05] bg-white/[0.015]";
+}
+
+function prettyDirection(
+  direction: Direction
+) {
+  if (
+    direction ===
+    "BULLISH"
+  ) {
+    return "Bullish";
+  }
+
+  if (
+    direction ===
+    "BEARISH"
+  ) {
+    return "Bearish";
+  }
+
+  return "Neutral";
+}
+
+function calculateBreadthAsset(
+  symbol: string,
+  contexts: MtfContext[]
+): BreadthAsset {
+  const valid =
+    contexts.filter(
+      (item) =>
+        item.success
+    );
+
+  if (
+    valid.length === 0
+  ) {
+    return {
+      symbol,
+      contexts,
+      dominantBias:
+        "NEUTRAL",
+      alignment: 0,
+      compositeScore: 0,
+    };
+  }
+
+  const bullish =
+    valid.filter(
+      (item) =>
+        item.bias ===
+        "BULLISH"
+    ).length;
+
+  const bearish =
+    valid.filter(
+      (item) =>
+        item.bias ===
+        "BEARISH"
+    ).length;
+
+  const neutral =
+    valid.filter(
+      (item) =>
+        item.bias ===
+        "NEUTRAL"
+    ).length;
+
+  let dominantBias:
+    Direction =
+      "NEUTRAL";
+
+  let dominantCount =
+    neutral;
+
+  if (
+    bullish >
+      bearish &&
+    bullish >
+      neutral
+  ) {
+    dominantBias =
+      "BULLISH";
+
+    dominantCount =
+      bullish;
+  } else if (
+    bearish >
+      bullish &&
+    bearish >
+      neutral
+  ) {
+    dominantBias =
+      "BEARISH";
+
+    dominantCount =
+      bearish;
+  }
+
+  const alignment =
+    (
+      dominantCount /
+      valid.length
+    ) *
+    100;
+
+  const scores =
+    valid
+      .map(
+        (item) =>
+          item.score
+      )
+      .filter(
+        (
+          value
+        ): value is number =>
+          value !== null
+      );
+
+  const compositeScore =
+    scores.length > 0
+      ? scores.reduce(
+          (
+            total,
+            score
+          ) =>
+            total +
+            score,
+          0
+        ) /
+        scores.length
+      : 0;
+
+  return {
+    symbol,
+    contexts,
+    dominantBias,
+    alignment,
+    compositeScore,
+  };
 }
 
 export default function MarketsPage() {
-  const [markets, setMarkets] = useState<Market[]>(emptyMarkets);
+  const [
+    markets,
+    setMarkets,
+  ] =
+    useState<Market[]>(
+      emptyMarkets
+    );
 
-  const [loading, setLoading] = useState(true);
+  const [
+    selectedSymbol,
+    setSelectedSymbol,
+  ] =
+    useState(
+      "BTCUSDT"
+    );
 
-  const [liveStatus, setLiveStatus] = useState<
-    "CONNECTING" | "OPEN" | "CLOSED" | "ERROR"
+  const [
+    selectedTimeframe,
+    setSelectedTimeframe,
+  ] =
+    useState("15m");
+
+  const [
+    selectedMtf,
+    setSelectedMtf,
+  ] =
+    useState<MtfContext[]>(
+      []
+    );
+
+  const [
+    breadthAssets,
+    setBreadthAssets,
+  ] =
+    useState<BreadthAsset[]>(
+      []
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    mtfLoading,
+    setMtfLoading,
+  ] = useState(true);
+
+  const [
+    breadthLoading,
+    setBreadthLoading,
+  ] = useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const [
+    lastUpdated,
+    setLastUpdated,
+  ] =
+    useState<Date | null>(
+      null
+    );
+
+  const [
+    liveStatus,
+    setLiveStatus,
+  ] = useState<
+    | "CONNECTING"
+    | "OPEN"
+    | "CLOSED"
+    | "ERROR"
   >("CONNECTING");
 
-  const [lastUpdate, setLastUpdate] =
-    useState<number | null>(null);
-
-  const [error, setError] = useState("");
-
-  const [selectedTimeframe, setSelectedTimeframe] =
-    useState("1m");
-
   /*
-   * MARKET CONTEXT
+   * ========================================
+   * FETCH CONTEXT
+   * ========================================
    */
 
-  useEffect(() => {
-    async function loadMarketContext() {
-      try {
-        setLoading(true);
-        setError("");
-
-        const results = await Promise.all(
-          symbols.map(async (symbol) => {
-            const [
-              contextResponse,
-              indicatorsResponse,
-            ] = await Promise.all([
-              fetch(
-                `/api/trading/context?symbol=${symbol}&timeframe=1h`,
-                {
-                  cache: "no-store",
-                }
-              ),
-              fetch(
-                `/api/trading/indicators?symbol=${symbol}&timeframe=1h`,
-                {
-                  cache: "no-store",
-                }
-              ),
-            ]);
-
-            const contextData =
-              await contextResponse.json();
-
-            const indicatorsData =
-              await indicatorsResponse.json();
-
-            if (
-              !contextResponse.ok ||
-              !contextData.success ||
-              !contextData.alpha
-            ) {
-              throw new Error(
-                contextData.error ||
-                  `Failed to load ${symbol} context`
-              );
-            }
-
-            if (
-              !indicatorsResponse.ok ||
-              !indicatorsData.success ||
-              !indicatorsData.indicators
-            ) {
-              throw new Error(
-                indicatorsData.error ||
-                  `Failed to load ${symbol} indicators`
-              );
-            }
-
-            const alpha = contextData.alpha;
-            const indicators =
-              indicatorsData.indicators;
-
-            return {
-              symbol,
-              exchange: "Bybit",
-              marketType: "PERPETUAL",
-
-              price: Number(indicators.price),
-
-              change24h: null,
-              bidPrice: null,
-              askPrice: null,
-              markPrice: null,
-
-              regime:
-                alpha.market.bias ?? "NEUTRAL",
-
-              score:
-                Number(alpha.market.score),
-
-              confidence:
-                Number(alpha.market.confidence),
-
-              volumeRatio:
-                Number(alpha.volume.ratio),
-
-              rsi:
-                indicators.rsi14 !== null
-                  ? Number(indicators.rsi14)
-                  : null,
-
-              ema20:
-                indicators.ema20 !== null
-                  ? Number(indicators.ema20)
-                  : null,
-
-              ema50:
-                indicators.ema50 !== null
-                  ? Number(indicators.ema50)
-                  : null,
-
-              atr:
-                indicators.atr14 !== null
-                  ? Number(indicators.atr14)
-                  : null,
-            } as Market;
-          })
-        );
-
-        setMarkets(results);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load market data"
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadMarketContext();
-  }, []);
-
-  /*
-   * LATEST CANDLE
-   */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadLatestCandles() {
-      try {
-        const results = await Promise.all(
-          symbols.map(async (symbol) => {
-            const response = await fetch(
-              `/api/market/candles?symbol=${symbol}&timeframe=1m&limit=1`,
+  const fetchContext =
+    useCallback(
+      async (
+        symbol: string,
+        timeframe: string
+      ): Promise<MtfContext> => {
+        try {
+          const response =
+            await fetch(
+              `/api/trading/context?symbol=${symbol}&timeframe=${timeframe}`,
               {
-                cache: "no-store",
+                cache:
+                  "no-store",
               }
             );
 
-            const data = await response.json();
+          const data =
+            await response.json();
 
-            if (
-              !response.ok ||
-              !data.success ||
-              !data.candles?.length
-            ) {
-              throw new Error(
-                data.error ||
-                  `Failed to load ${symbol} candle`
-              );
-            }
-
-            const candle = data.candles[0];
-
+          if (
+            !response.ok ||
+            !data.success ||
+            !data.alpha
+          ) {
             return {
-              symbol,
-              price: Number(candle.close),
+              timeframe,
+
+              bias:
+                "NEUTRAL",
+
+              score: null,
+
+              confidence:
+                null,
+
+              trendDirection:
+                "NEUTRAL",
+
+              momentumDirection:
+                "NEUTRAL",
+
+              volumeCondition:
+                "—",
+
+              volatilityLevel:
+                "—",
+
+              success:
+                false,
             };
-          })
-        );
+          }
 
-        if (cancelled) return;
+          const alpha =
+            data.alpha;
 
-        setMarkets((current) =>
-          current.map((market) => {
-            const latest = results.find(
-              (item) =>
-                item.symbol === market.symbol
+          return {
+            timeframe,
+
+            bias:
+              normalizeDirection(
+                alpha.market
+                  ?.bias
+              ),
+
+            score:
+              numberValue(
+                alpha.market
+                  ?.score
+              ),
+
+            confidence:
+              numberValue(
+                alpha.market
+                  ?.confidence
+              ),
+
+            trendDirection:
+              normalizeDirection(
+                alpha.trend
+                  ?.direction
+              ),
+
+            momentumDirection:
+              normalizeDirection(
+                alpha.momentum
+                  ?.direction
+              ),
+
+            volumeCondition:
+              String(
+                alpha.volume
+                  ?.condition ??
+                  "—"
+              ),
+
+            volatilityLevel:
+              String(
+                alpha.volatility
+                  ?.level ??
+                  "—"
+              ),
+
+            success:
+              true,
+          };
+        } catch {
+          return {
+            timeframe,
+
+            bias:
+              "NEUTRAL",
+
+            score: null,
+
+            confidence: null,
+
+            trendDirection:
+              "NEUTRAL",
+
+            momentumDirection:
+              "NEUTRAL",
+
+            volumeCondition:
+              "—",
+
+            volatilityLevel:
+              "—",
+
+            success:
+              false,
+          };
+        }
+      },
+      []
+    );
+
+  /*
+   * ========================================
+   * MARKET INTELLIGENCE
+   * ========================================
+   */
+
+  const loadMarkets =
+    useCallback(
+      async (
+        manual = false
+      ) => {
+        if (manual) {
+          setRefreshing(true);
+        }
+
+        try {
+          const results =
+            await Promise.all(
+              SYMBOLS.map(
+                async (
+                  symbol
+                ) => {
+                  const [
+                    contextResponse,
+                    indicatorsResponse,
+                  ] =
+                    await Promise.all([
+                      fetch(
+                        `/api/trading/context?symbol=${symbol}&timeframe=1h`,
+                        {
+                          cache:
+                            "no-store",
+                        }
+                      ),
+
+                      fetch(
+                        `/api/trading/indicators?symbol=${symbol}&timeframe=1h`,
+                        {
+                          cache:
+                            "no-store",
+                        }
+                      ),
+                    ]);
+
+                  const [
+                    contextData,
+                    indicatorsData,
+                  ] =
+                    await Promise.all([
+                      contextResponse.json(),
+                      indicatorsResponse.json(),
+                    ]);
+
+                  if (
+                    !contextResponse.ok ||
+                    !contextData.success ||
+                    !contextData.alpha
+                  ) {
+                    throw new Error(
+                      contextData.error ??
+                        `Failed to load ${symbol}`
+                    );
+                  }
+
+                  const alpha =
+                    contextData.alpha;
+
+                  const indicators =
+                    indicatorsData
+                      ?.indicators ??
+                    {};
+
+                  return {
+                    symbol,
+
+                    price:
+                      numberValue(
+                        indicators.price
+                      ),
+
+                    change24h:
+                      null,
+
+                    bidPrice:
+                      null,
+
+                    askPrice:
+                      null,
+
+                    markPrice:
+                      null,
+
+                    bias:
+                      normalizeDirection(
+                        alpha.market
+                          ?.bias
+                      ),
+
+                    score:
+                      numberValue(
+                        alpha.market
+                          ?.score
+                      ),
+
+                    confidence:
+                      numberValue(
+                        alpha.market
+                          ?.confidence
+                      ),
+
+                    trendDirection:
+                      normalizeDirection(
+                        alpha.trend
+                          ?.direction
+                      ),
+
+                    trendStrength:
+                      numberValue(
+                        alpha.trend
+                          ?.strength
+                      ),
+
+                    momentumDirection:
+                      normalizeDirection(
+                        alpha.momentum
+                          ?.direction
+                      ),
+
+                    momentumStrength:
+                      numberValue(
+                        alpha.momentum
+                          ?.strength
+                      ),
+
+                    volumeCondition:
+                      String(
+                        alpha.volume
+                          ?.condition ??
+                          "—"
+                      ),
+
+                    volumeRatio:
+                      numberValue(
+                        alpha.volume
+                          ?.ratio
+                      ),
+
+                    volatilityLevel:
+                      String(
+                        alpha.volatility
+                          ?.level ??
+                          "—"
+                      ),
+
+                    volatilityPercentage:
+                      numberValue(
+                        alpha.volatility
+                          ?.percentage
+                      ),
+
+                    rsi:
+                      numberValue(
+                        indicators.rsi14
+                      ),
+
+                    ema20:
+                      numberValue(
+                        indicators.ema20
+                      ),
+
+                    ema50:
+                      numberValue(
+                        indicators.ema50
+                      ),
+
+                    atr:
+                      numberValue(
+                        indicators.atr14
+                      ),
+                  } satisfies Market;
+                }
+              )
             );
 
-            if (!latest) return market;
+          setMarkets(
+            (
+              current
+            ) =>
+              results.map(
+                (
+                  nextMarket
+                ) => {
+                  const previous =
+                    current.find(
+                      (
+                        item
+                      ) =>
+                        item.symbol ===
+                        nextMarket.symbol
+                    );
 
-            return {
-              ...market,
-              price: latest.price,
-            };
-          })
+                  return {
+                    ...nextMarket,
+
+                    price:
+                      previous
+                        ?.price ??
+                      nextMarket.price,
+
+                    change24h:
+                      previous
+                        ?.change24h ??
+                      null,
+
+                    bidPrice:
+                      previous
+                        ?.bidPrice ??
+                      null,
+
+                    askPrice:
+                      previous
+                        ?.askPrice ??
+                      null,
+
+                    markPrice:
+                      previous
+                        ?.markPrice ??
+                      null,
+                  };
+                }
+              )
+          );
+
+          setLastUpdated(
+            new Date()
+          );
+
+          setError("");
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load market intelligence"
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      []
+    );
+
+  /*
+   * ========================================
+   * SELECTED MARKET MTF
+   * ========================================
+   */
+
+  const loadSelectedMtf =
+    useCallback(
+      async () => {
+        setMtfLoading(
+          true
         );
 
-        setLastUpdate(Date.now());
-        setLiveStatus("OPEN");
-        setError("");
-      } catch (err) {
-        if (cancelled) return;
+        try {
+          const results =
+            await Promise.all(
+              MTF_TIMEFRAMES.map(
+                (
+                  timeframe
+                ) =>
+                  fetchContext(
+                    selectedSymbol,
+                    timeframe
+                  )
+              )
+            );
 
-        setLiveStatus("ERROR");
+          setSelectedMtf(
+            results
+          );
+        } finally {
+          setMtfLoading(
+            false
+          );
+        }
+      },
+      [
+        fetchContext,
+        selectedSymbol,
+      ]
+    );
 
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load candle data"
+  /*
+   * ========================================
+   * GLOBAL MARKET BREADTH
+   * ========================================
+   *
+   * BTC / ETH / SOL
+   * ×
+   * 1m / 5m / 15m / 1h
+   */
+
+  const loadBreadth =
+    useCallback(
+      async () => {
+        setBreadthLoading(
+          true
         );
-      }
+
+        try {
+          const assets =
+            await Promise.all(
+              SYMBOLS.map(
+                async (
+                  symbol
+                ) => {
+                  const contexts =
+                    await Promise.all(
+                      MTF_TIMEFRAMES.map(
+                        (
+                          timeframe
+                        ) =>
+                          fetchContext(
+                            symbol,
+                            timeframe
+                          )
+                      )
+                    );
+
+                  return calculateBreadthAsset(
+                    symbol,
+                    contexts
+                  );
+                }
+              )
+            );
+
+          setBreadthAssets(
+            assets
+          );
+        } finally {
+          setBreadthLoading(
+            false
+          );
+        }
+      },
+      [
+        fetchContext,
+      ]
+    );
+
+  /*
+   * ========================================
+   * REFRESH
+   * ========================================
+   */
+
+  useEffect(() => {
+    loadMarkets();
+    loadBreadth();
+
+    const interval =
+      window.setInterval(
+        () => {
+          loadMarkets();
+          loadBreadth();
+        },
+        60_000
+      );
+
+    function handlePipelineComplete() {
+      loadMarkets();
+      loadBreadth();
     }
 
-    loadLatestCandles();
-
-    const interval = window.setInterval(
-      loadLatestCandles,
-      5_000
+    window.addEventListener(
+      "hiddenalpha:signal-pipeline-complete",
+      handlePipelineComplete
     );
 
     return () => {
-      cancelled = true;
-      window.clearInterval(interval);
+      window.clearInterval(
+        interval
+      );
+
+      window.removeEventListener(
+        "hiddenalpha:signal-pipeline-complete",
+        handlePipelineComplete
+      );
     };
-  }, []);
+  }, [
+    loadMarkets,
+    loadBreadth,
+  ]);
+
+  useEffect(() => {
+    loadSelectedMtf();
+
+    function handlePipelineComplete() {
+      loadSelectedMtf();
+    }
+
+    window.addEventListener(
+      "hiddenalpha:signal-pipeline-complete",
+      handlePipelineComplete
+    );
+
+    return () => {
+      window.removeEventListener(
+        "hiddenalpha:signal-pipeline-complete",
+        handlePipelineComplete
+      );
+    };
+  }, [
+    loadSelectedMtf,
+  ]);
 
   /*
-   * BYBIT LIVE TICKER
+   * ========================================
+   * BYBIT WEBSOCKET
+   * ========================================
    */
 
   useEffect(() => {
     const connection =
       createBybitTickerSocket(
-        symbols,
-        (ticker: BybitLiveTicker) => {
-          setMarkets((current) =>
-            current.map((market) => {
-              if (
-                market.symbol !== ticker.symbol
-              ) {
-                return market;
-              }
+        SYMBOLS,
 
-              return {
-                ...market,
-                price: ticker.lastPrice,
-                change24h:
-                  ticker.price24hChange,
-                bidPrice: ticker.bidPrice,
-                askPrice: ticker.askPrice,
-                markPrice: ticker.markPrice,
-              };
-            })
+        (
+          ticker: BybitLiveTicker
+        ) => {
+          setMarkets(
+            (
+              current
+            ) =>
+              current.map(
+                (
+                  market
+                ) => {
+                  if (
+                    market.symbol !==
+                    ticker.symbol
+                  ) {
+                    return market;
+                  }
+
+                  return {
+                    ...market,
+
+                    price:
+                      ticker.lastPrice,
+
+                    change24h:
+                      ticker.price24hChange,
+
+                    bidPrice:
+                      ticker.bidPrice,
+
+                    askPrice:
+                      ticker.askPrice,
+
+                    markPrice:
+                      ticker.markPrice,
+                  };
+                }
+              )
           );
 
-          setLastUpdate(Date.now());
+          setLastUpdated(
+            new Date()
+          );
         },
+
         setLiveStatus,
-        (socketError) => {
-          setError(socketError.message);
+
+        (
+          socketError
+        ) => {
+          setError(
+            socketError.message
+          );
         }
       );
 
@@ -370,895 +1146,1678 @@ export default function MarketsPage() {
     };
   }, []);
 
+  /*
+   * ========================================
+   * DERIVED MARKET STATE
+   * ========================================
+   */
+
+  const selectedMarket =
+    useMemo(
+      () =>
+        markets.find(
+          (
+            market
+          ) =>
+            market.symbol ===
+            selectedSymbol
+        ) ??
+        markets[0],
+      [
+        markets,
+        selectedSymbol,
+      ]
+    );
+
+  const bullishCount =
+    markets.filter(
+      (
+        market
+      ) =>
+        market.bias ===
+        "BULLISH"
+    ).length;
+
+  const bearishCount =
+    markets.filter(
+      (
+        market
+      ) =>
+        market.bias ===
+        "BEARISH"
+    ).length;
+
+  const neutralCount =
+    markets.filter(
+      (
+        market
+      ) =>
+        market.bias ===
+        "NEUTRAL"
+    ).length;
+
+  const deskBias:
+    Direction =
+      bullishCount >
+      bearishCount &&
+      bullishCount >
+      neutralCount
+        ? "BULLISH"
+        : bearishCount >
+            bullishCount &&
+          bearishCount >
+            neutralCount
+        ? "BEARISH"
+        : "NEUTRAL";
+
+  const marketAlignment =
+    breadthAssets.length >
+    0
+      ? breadthAssets.reduce(
+          (
+            total,
+            asset
+          ) =>
+            total +
+            asset.alignment,
+          0
+        ) /
+        breadthAssets.length
+      : 0;
+
+  const strongestAsset =
+    breadthAssets.length >
+    0
+      ? [
+          ...breadthAssets,
+        ].sort(
+          (
+            a,
+            b
+          ) =>
+            b.compositeScore -
+            a.compositeScore
+        )[0]
+      : null;
+
+  const weakestAsset =
+    breadthAssets.length >
+    0
+      ? [
+          ...breadthAssets,
+        ].sort(
+          (
+            a,
+            b
+          ) =>
+            a.compositeScore -
+            b.compositeScore
+        )[0]
+      : null;
+
+  const highVolatilityCount =
+    markets.filter(
+      (
+        market
+      ) =>
+        market.volatilityLevel ===
+        "HIGH"
+    ).length;
+
+  const lowVolatilityCount =
+    markets.filter(
+      (
+        market
+      ) =>
+        market.volatilityLevel ===
+        "LOW"
+    ).length;
+
+  const riskEnvironment =
+    highVolatilityCount >= 2
+      ? "ELEVATED"
+      : lowVolatilityCount ===
+        markets.length
+      ? "CALM"
+      : "NORMAL";
+
+  const participation =
+    marketAlignment >= 75 &&
+    riskEnvironment !==
+      "ELEVATED"
+      ? "BROAD"
+      : "SELECTIVE";
+
+  const deskCondition =
+    `${
+      deskBias ===
+      "NEUTRAL"
+        ? "MIXED"
+        : deskBias
+    } / ${participation}`;
+
   return (
-    <main className="min-h-screen bg-[#06070a] text-white">
-      <div className="flex min-h-screen">
+    <HiddenAlphaShell>
 
-        {/* SIDEBAR */}
+      <div className="mx-auto max-w-[1700px] px-4 py-5 lg:px-5">
 
-        <aside className="hidden w-[240px] shrink-0 border-r border-white/[0.06] bg-[#08090d] lg:flex lg:flex-col">
-          <div className="flex h-[76px] items-center border-b border-white/[0.06] px-5">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600">
-                <span className="text-sm font-bold">
-                  α
-                </span>
+        {/* HEADER */}
 
-                <div className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-[#08090d] bg-emerald-400" />
-              </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 
-              <div>
-                <div className="text-[15px] font-semibold tracking-tight">
-                  hiddenalpha
-                </div>
+          <div>
 
-                <div className="mt-0.5 text-[9px] font-medium tracking-[0.24em] text-zinc-600">
-                  TRADING INTELLIGENCE
-                </div>
-              </div>
+            <div className="flex items-center gap-2">
+
+              <h1 className="text-[20px] font-semibold tracking-[-0.03em] text-zinc-100">
+                Market
+              </h1>
+
+              <span className="rounded-md border border-cyan-500/10 bg-cyan-500/[0.06] px-2 py-1 text-[7px] font-semibold uppercase tracking-[0.12em] text-cyan-400">
+                Intelligence Desk
+              </span>
+
             </div>
-          </div>
 
-          <div className="px-3 pt-5">
-            <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-700">
-              Workspace
+            <p className="mt-1 text-[9px] text-zinc-600">
+              Live market data, alpha context, breadth and multi-timeframe intelligence.
             </p>
 
-            <nav className="space-y-1">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                const active =
-                  item.label === "Markets";
+          </div>
 
-                return (
-                  <div
-                    key={item.label}
-                    className={`group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] transition ${
-                      active
-                        ? "bg-violet-500/10 text-white"
-                        : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300"
-                    }`}
-                  >
-                    <Icon
-                      size={17}
-                      strokeWidth={1.8}
-                      className={
-                        active
-                          ? "text-violet-400"
-                          : "text-zinc-600 group-hover:text-zinc-400"
-                      }
-                    />
+          <div className="flex items-center gap-3">
 
-                    <span>{item.label}</span>
+            <span
+              className={`flex items-center gap-2 text-[8px] ${
+                liveStatus ===
+                "OPEN"
+                  ? "text-emerald-400"
+                  : liveStatus ===
+                    "ERROR"
+                  ? "text-red-400"
+                  : "text-zinc-600"
+              }`}
+            >
 
-                    {item.label ===
-                      "Signals" && (
-                      <span className="ml-auto rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[9px] text-violet-400">
-                        LIVE
-                      </span>
-                    )}
-                  </div>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  liveStatus ===
+                  "OPEN"
+                    ? "animate-pulse bg-emerald-400"
+                    : liveStatus ===
+                      "ERROR"
+                    ? "bg-red-400"
+                    : "bg-zinc-600"
+                }`}
+              />
+
+              Bybit{" "}
+              {liveStatus ===
+              "OPEN"
+                ? "Live"
+                : liveStatus}
+
+            </span>
+
+            <button
+              onClick={() => {
+                loadMarkets(
+                  true
                 );
-              })}
-            </nav>
+
+                loadSelectedMtf();
+
+                loadBreadth();
+              }}
+              disabled={
+                refreshing
+              }
+              className="flex h-9 items-center gap-2 rounded-lg border border-white/[0.055] bg-[#090c12] px-3 text-[8px] text-zinc-500 transition hover:text-zinc-300"
+            >
+
+              <RefreshCw
+                size={11}
+                className={
+                  refreshing
+                    ? "animate-spin"
+                    : ""
+                }
+              />
+
+              Refresh
+
+            </button>
+
           </div>
 
-          <div className="mt-auto p-4">
-            <div className="mb-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-zinc-500">
-                  Data engine
-                </span>
+        </div>
 
-                <span className="flex items-center gap-1.5 text-[10px] text-emerald-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-
-                  {liveStatus === "OPEN"
-                    ? "Live"
-                    : liveStatus}
-                </span>
-              </div>
-
-              <div className="mt-3 h-px bg-white/[0.05]" />
-
-              <div className="mt-3 flex items-center justify-between text-[10px]">
-                <span className="text-zinc-600">
-                  Market source
-                </span>
-
-                <span className="text-zinc-400">
-                  Bybit
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[11px] font-semibold">
-                T
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-medium">
-                  Trader
-                </p>
-
-                <p className="truncate text-[10px] text-zinc-600">
-                  Personal workspace
-                </p>
-              </div>
-
-              <ChevronDown
-                size={13}
-                className="text-zinc-700"
-              />
-            </div>
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-500/10 bg-red-500/[0.04] px-4 py-3 text-[8px] text-red-400">
+            {error}
           </div>
-        </aside>
+        )}
 
-        {/* MAIN */}
+        {/* STATUS */}
 
-        <section className="min-w-0 flex-1">
+        <div className="mt-5 grid grid-cols-2 gap-2 xl:grid-cols-4">
 
-          {/* TOP BAR */}
+          <SummaryCard
+            icon={Radio}
+            label="Live Feed"
+            value={
+              liveStatus ===
+              "OPEN"
+                ? "Connected"
+                : liveStatus
+            }
+            tone={
+              liveStatus ===
+              "OPEN"
+                ? "green"
+                : "neutral"
+            }
+          />
 
-          <header className="flex h-[76px] items-center border-b border-white/[0.06] px-5 lg:px-8">
-            <div className="relative hidden w-full max-w-[460px] md:block">
-              <Search
-                size={16}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-700"
-              />
+          <SummaryCard
+            icon={
+              BrainCircuit
+            }
+            label="Desk Bias"
+            value={prettyDirection(
+              deskBias
+            )}
+            direction={
+              deskBias
+            }
+          />
 
-              <input
-                placeholder="Search markets, signals or tools..."
-                className="h-10 w-full rounded-xl border border-white/[0.07] bg-white/[0.025] pl-10 pr-16 text-[12px] text-white outline-none placeholder:text-zinc-700 focus:border-violet-500/30"
-              />
+          <SummaryCard
+            icon={
+              Activity
+            }
+            label="MTF Alignment"
+            value={
+              breadthLoading
+                ? "Analyzing"
+                : `${marketAlignment.toFixed(
+                    0
+                  )}%`
+            }
+            tone={
+              marketAlignment >=
+              70
+                ? "green"
+                : "neutral"
+            }
+          />
 
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-white/[0.07] px-1.5 py-1 text-[9px] text-zinc-700">
-                Ctrl K
-              </span>
-            </div>
+          <SummaryCard
+            icon={
+              ShieldAlert
+            }
+            label="Risk Environment"
+            value={
+              riskEnvironment
+            }
+            tone={
+              riskEnvironment ===
+              "CALM"
+                ? "green"
+                : riskEnvironment ===
+                  "ELEVATED"
+                ? "red"
+                : "neutral"
+            }
+          />
 
-            <div className="ml-auto flex items-center gap-5">
-              <div className="relative">
-                <Bell
-                  size={18}
-                  className="text-zinc-600"
+        </div>
+
+        {/* MARKET BREADTH */}
+
+        <section className="ha-panel ha-purple-glow mt-3 overflow-hidden">
+
+          <div className="flex flex-col gap-4 border-b border-white/[0.05] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+
+            <div className="flex items-center gap-3">
+
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-500/10 bg-violet-500/[0.07]">
+
+                <BrainCircuit
+                  size={13}
+                  className="text-violet-400"
                 />
 
-                <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-violet-500" />
               </div>
 
-              <div className="h-7 w-px bg-white/[0.06]" />
-
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[10px] font-semibold">
-                  T
-                </div>
-
-                <div className="hidden sm:block">
-                  <p className="text-[11px] font-medium">
-                    Trader
-                  </p>
-
-                  <p className="text-[9px] text-zinc-700">
-                    Personal
-                  </p>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          {/* CONTENT */}
-
-          <div className="mx-auto max-w-[1500px] p-5 lg:p-8">
-
-            {/* HEADER */}
-
-            <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
               <div>
-                <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-400">
-                  <BarChart3 size={13} />
-                  Market intelligence
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <h1 className="text-[30px] font-semibold tracking-[-0.03em]">
-                    Markets
-                  </h1>
+                <h2 className="text-[11px] font-medium text-zinc-200">
+                  Crypto Market State
+                </h2>
 
-                  <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/10 bg-emerald-500/[0.04] px-2.5 py-1.5">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                <p className="mt-0.5 text-[7px] text-zinc-700">
+                  Cross-asset breadth across BTC, ETH and SOL
+                </p>
 
-                    <Wifi
-                      size={11}
-                      className="text-emerald-400"
+              </div>
+
+            </div>
+
+            <div className="text-left lg:text-right">
+
+              <p className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+                Desk Condition
+              </p>
+
+              <p
+                className={`mt-1 text-[12px] font-semibold ${
+                  deskBias ===
+                  "BULLISH"
+                    ? "text-emerald-400"
+                    : deskBias ===
+                      "BEARISH"
+                    ? "text-red-400"
+                    : "text-amber-400"
+                }`}
+              >
+                {breadthLoading
+                  ? "ANALYZING"
+                  : deskCondition}
+              </p>
+
+            </div>
+
+          </div>
+
+          <div className="p-5">
+
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+
+              <BreadthMetric
+                label="Breadth"
+                value={`${bullishCount}B / ${bearishCount}S / ${neutralCount}N`}
+              />
+
+              <BreadthMetric
+                label="MTF Alignment"
+                value={
+                  breadthLoading
+                    ? "—"
+                    : `${marketAlignment.toFixed(
+                        0
+                      )}%`
+                }
+              />
+
+              <BreadthMetric
+                label="Strongest"
+                value={
+                  strongestAsset
+                    ? strongestAsset.symbol.replace(
+                        "USDT",
+                        ""
+                      )
+                    : "—"
+                }
+                detail={
+                  strongestAsset
+                    ? `Score ${strongestAsset.compositeScore.toFixed(
+                        1
+                      )}`
+                    : undefined
+                }
+              />
+
+              <BreadthMetric
+                label="Weakest"
+                value={
+                  weakestAsset
+                    ? weakestAsset.symbol.replace(
+                        "USDT",
+                        ""
+                      )
+                    : "—"
+                }
+                detail={
+                  weakestAsset
+                    ? `Score ${weakestAsset.compositeScore.toFixed(
+                        1
+                      )}`
+                    : undefined
+                }
+              />
+
+              <BreadthMetric
+                label="Environment"
+                value={
+                  riskEnvironment
+                }
+              />
+
+            </div>
+
+            <div className="mt-3 grid gap-2 lg:grid-cols-3">
+
+              {breadthAssets.map(
+                (
+                  asset
+                ) => (
+                  <div
+                    key={
+                      asset.symbol
+                    }
+                    className={`rounded-xl border p-4 ${directionBg(
+                      asset.dominantBias
+                    )}`}
+                  >
+
+                    <div className="flex items-start justify-between">
+
+                      <div>
+
+                        <p className="text-[10px] font-medium text-zinc-300">
+                          {asset.symbol}
+                        </p>
+
+                        <p className="mt-1 text-[7px] text-zinc-700">
+                          Cross-timeframe state
+                        </p>
+
+                      </div>
+
+                      <DirectionBadge
+                        direction={
+                          asset.dominantBias
+                        }
+                      />
+
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+
+                      <MiniStat
+                        label="Alignment"
+                        value={`${asset.alignment.toFixed(
+                          0
+                        )}%`}
+                      />
+
+                      <MiniStat
+                        label="Composite"
+                        value={`${
+                          asset.compositeScore >
+                          0
+                            ? "+"
+                            : ""
+                        }${asset.compositeScore.toFixed(
+                          1
+                        )}`}
+                      />
+
+                    </div>
+
+                    <div className="mt-4 flex gap-1">
+
+                      {MTF_TIMEFRAMES.map(
+                        (
+                          timeframe
+                        ) => {
+                          const context =
+                            asset.contexts.find(
+                              (
+                                item
+                              ) =>
+                                item.timeframe ===
+                                timeframe
+                            );
+
+                          const bias =
+                            context?.bias ??
+                            "NEUTRAL";
+
+                          return (
+                            <div
+                              key={
+                                timeframe
+                              }
+                              className="flex-1"
+                            >
+
+                              <div
+                                className={`h-1 rounded-full ${
+                                  bias ===
+                                  "BULLISH"
+                                    ? "bg-emerald-400"
+                                    : bias ===
+                                      "BEARISH"
+                                    ? "bg-red-400"
+                                    : "bg-zinc-700"
+                                }`}
+                              />
+
+                              <p className="mt-1 text-center text-[6px] text-zinc-700">
+                                {timeframe}
+                              </p>
+
+                            </div>
+                          );
+                        }
+                      )}
+
+                    </div>
+
+                  </div>
+                )
+              )}
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* ASSET SELECTOR */}
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+
+          {markets.map(
+            (
+              market
+            ) => {
+              const selected =
+                market.symbol ===
+                selectedSymbol;
+
+              const positive =
+                (
+                  market.change24h ??
+                  0
+                ) >= 0;
+
+              return (
+                <button
+                  key={
+                    market.symbol
+                  }
+                  onClick={() =>
+                    setSelectedSymbol(
+                      market.symbol
+                    )
+                  }
+                  className={`rounded-xl border p-4 text-left transition ${
+                    selected
+                      ? "border-violet-500/25 bg-violet-500/[0.055]"
+                      : "border-white/[0.055] bg-[#090c12] hover:border-white/[0.09]"
+                  }`}
+                >
+
+                  <div className="flex items-start justify-between">
+
+                    <div>
+
+                      <p className="text-[11px] font-medium text-zinc-200">
+                        {market.symbol}
+                      </p>
+
+                      <p className="mt-1 text-[7px] text-zinc-700">
+                        Bybit Perpetual
+                      </p>
+
+                    </div>
+
+                    <DirectionBadge
+                      direction={
+                        market.bias
+                      }
                     />
 
-                    <span className="text-[9px] text-emerald-400">
-                      {liveStatus === "OPEN"
-                        ? "LIVE"
-                        : liveStatus}
-                    </span>
                   </div>
-                </div>
 
-                <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-zinc-600">
-                  Live market prices combined with
-                  Hiddenalpha&apos;s analytical context.
-                </p>
-              </div>
+                  <div className="mt-5 flex items-end justify-between">
 
-              <div className="flex items-center gap-3">
-                {lastUpdate && (
-                  <div className="hidden text-right sm:block">
-                    <p className="text-[9px] text-zinc-700">
-                      Last tick
-                    </p>
+                    <div>
 
-                    <p className="mt-1 text-[10px] text-zinc-500">
-                      {new Date(
-                        lastUpdate
-                      ).toLocaleTimeString()}
-                    </p>
-                  </div>
-                )}
+                      <p className="ha-number text-[20px] font-semibold text-zinc-100">
+                        {formatPrice(
+                          market.price
+                        )}
+                      </p>
 
-                <button className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3.5 text-[11px] text-zinc-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  Live
-                </button>
-
-                <button className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3.5 text-[11px] text-zinc-400">
-                  All Markets
-                  <ChevronDown size={13} />
-                </button>
-              </div>
-            </div>
-
-            {/* ERROR */}
-
-            {error && (
-              <div className="mb-3 rounded-xl border border-red-500/10 bg-red-500/[0.03] px-4 py-3 text-[10px] text-red-400">
-                {error}
-              </div>
-            )}
-
-            {/* MARKET CARDS */}
-
-            <div className="grid gap-3 xl:grid-cols-3">
-              {markets.map((market) => {
-                const bullish =
-                  market.regime === "BULLISH";
-
-                const bearish =
-                  market.regime === "BEARISH";
-
-                const positive =
-                  (market.change24h ?? 0) >= 0;
-
-                return (
-                  <div
-                    key={market.symbol}
-                    className="group rounded-2xl border border-white/[0.06] bg-[#0a0c10] p-5 transition hover:border-violet-500/20"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.05] bg-white/[0.03] text-[11px] font-semibold text-zinc-300">
-                          {market.symbol.slice(0, 3)}
-                        </div>
-
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[13px] font-semibold">
-                              {market.symbol}
-                            </p>
-
-                            <span className="rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[8px] text-zinc-600">
-                              PERP
-                            </span>
-                          </div>
-
-                          <div className="mt-1 flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-
-                            <p className="text-[9px] text-zinc-600">
-                              Live · {market.exchange}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`rounded-lg px-2.5 py-1.5 text-[9px] ${
-                          bullish
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : bearish
-                              ? "bg-red-500/10 text-red-400"
-                              : "bg-zinc-500/10 text-zinc-500"
+                      <p
+                        className={`mt-1 flex items-center gap-1 text-[8px] ${
+                          market.change24h ===
+                          null
+                            ? "text-zinc-700"
+                            : positive
+                            ? "text-emerald-400"
+                            : "text-red-400"
                         }`}
                       >
-                        {market.regime}
-                      </span>
+
+                        {market.change24h !==
+                        null ? (
+                          <>
+                            {positive ? (
+                              <ArrowUpRight
+                                size={9}
+                              />
+                            ) : (
+                              <ArrowDownRight
+                                size={9}
+                              />
+                            )}
+
+                            {positive
+                              ? "+"
+                              : ""}
+
+                            {market.change24h.toFixed(
+                              2
+                            )}
+                            %
+                          </>
+                        ) : (
+                          "24H —"
+                        )}
+
+                      </p>
+
                     </div>
 
-                    <div className="mt-7 flex items-end justify-between">
-                      <div>
-                        <p className="text-[28px] font-semibold tracking-[-0.04em]">
-                          {loading
-                            ? "Loading..."
-                            : formatPrice(
-                                market.price
-                              )}
-                        </p>
+                    <div className="text-right">
 
-                        <div className="mt-1.5 flex items-center gap-2">
-                          <span
-                            className={`text-[10px] ${
-                              positive
-                                ? "text-emerald-400"
-                                : "text-red-400"
-                            }`}
-                          >
-                            {market.change24h !== null
-                              ? `${positive ? "+" : ""}${market.change24h.toFixed(2)}%`
-                              : "—"}
-                          </span>
+                      <p className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+                        Alpha Score
+                      </p>
 
-                          <span className="text-[9px] text-zinc-700">
-                            24H
-                          </span>
-                        </div>
-                      </div>
+                      <p
+                        className={`ha-number mt-1 text-[13px] font-semibold ${directionClass(
+                          market.bias
+                        )}`}
+                      >
+                        {market.score !==
+                        null
+                          ? `${
+                              market.score >
+                              0
+                                ? "+"
+                                : ""
+                            }${market.score}`
+                          : "—"}
+                      </p>
 
-                      <div className="text-right">
-                        <p className="text-[8px] uppercase tracking-wider text-zinc-700">
-                          Alpha
-                        </p>
+                    </div>
 
-                        <p
-                          className={`mt-1 text-[14px] font-semibold ${
-                            (market.score ?? 0) > 0
-                              ? "text-emerald-400"
-                              : (market.score ?? 0) < 0
-                                ? "text-red-400"
-                                : "text-zinc-500"
+                  </div>
+
+                </button>
+              );
+            }
+          )}
+
+        </div>
+
+        {selectedMarket && (
+          <>
+            {/* CHART + CONTEXT */}
+
+            <div className="mt-3 grid gap-3 xl:grid-cols-[1.5fr_0.7fr]">
+
+              <section className="ha-panel overflow-hidden">
+
+                <div className="flex flex-col gap-3 border-b border-white/[0.05] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+
+                  <div>
+
+                    <div className="flex items-center gap-2">
+
+                      <h2 className="text-[12px] font-medium text-zinc-100">
+                        {selectedMarket.symbol}
+                      </h2>
+
+                      <DirectionBadge
+                        direction={
+                          selectedMarket.bias
+                        }
+                      />
+
+                    </div>
+
+                    <p className="mt-1 text-[8px] text-zinc-700">
+                      Live price action • Bybit perpetual
+                    </p>
+
+                  </div>
+
+                  <div className="flex items-center gap-1 rounded-lg border border-white/[0.05] bg-white/[0.015] p-1">
+
+                    {CHART_TIMEFRAMES.map(
+                      (
+                        timeframe
+                      ) => (
+                        <button
+                          key={
+                            timeframe
+                          }
+                          onClick={() =>
+                            setSelectedTimeframe(
+                              timeframe
+                            )
+                          }
+                          className={`rounded-md px-3 py-1.5 text-[7px] font-medium ${
+                            selectedTimeframe ===
+                            timeframe
+                              ? "bg-violet-600 text-white"
+                              : "text-zinc-600"
                           }`}
                         >
-                          {market.score !== null
-                            ? `${market.score > 0 ? "+" : ""}${market.score}`
-                            : "—"}
-                        </p>
-                      </div>
-                    </div>
+                          {timeframe}
+                        </button>
+                      )
+                    )}
 
-                    <div className="mt-6 grid grid-cols-3 gap-2">
-                      {[
-                        ["Bid", market.bidPrice],
-                        ["Ask", market.askPrice],
-                        ["Mark", market.markPrice],
-                      ].map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-3"
-                        >
-                          <p className="text-[8px] uppercase tracking-wider text-zinc-700">
-                            {label}
-                          </p>
-
-                          <p className="mt-2 text-[11px] font-medium text-zinc-300">
-                            {formatPrice(
-                              value as number | null
-                            )}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-3">
-                        <p className="text-[8px] uppercase tracking-wider text-zinc-700">
-                          Confidence
-                        </p>
-
-                        <p className="mt-2 text-[13px] font-medium">
-                          {market.confidence !== null
-                            ? `${market.confidence}%`
-                            : "—"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-3">
-                        <p className="text-[8px] uppercase tracking-wider text-zinc-700">
-                          Volume
-                        </p>
-
-                        <p className="mt-2 text-[13px] font-medium">
-                          {market.volumeRatio !== null
-                            ? `${market.volumeRatio.toFixed(2)}x`
-                            : "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between border-t border-white/[0.05] pt-3">
-                      <div className="flex items-center gap-1.5">
-                        {bullish ? (
-                          <TrendingUp
-                            size={12}
-                            className="text-emerald-400"
-                          />
-                        ) : bearish ? (
-                          <TrendingDown
-                            size={12}
-                            className="text-red-400"
-                          />
-                        ) : (
-                          <Activity
-                            size={12}
-                            className="text-zinc-600"
-                          />
-                        )}
-
-                        <span className="text-[9px] text-zinc-600">
-                          Market regime
-                        </span>
-                      </div>
-
-                      <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-[9px] text-zinc-600 transition hover:bg-violet-500/10 hover:text-violet-400">
-                        Analyze
-                        <ArrowUpRight size={11} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* CHART HEADER */}
-
-            <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-[#0a0c10] p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-[12px] font-medium">
-                  Price Action
-                </p>
-
-                <p className="mt-1 text-[9px] text-zinc-700">
-                  Multi-timeframe market structure
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
-                {timeframes.map((timeframe) => {
-                  const active =
-                    selectedTimeframe === timeframe;
-
-                  return (
-                    <button
-                      key={timeframe}
-                      onClick={() =>
-                        setSelectedTimeframe(
-                          timeframe
-                        )
-                      }
-                      className={`rounded-lg px-3 py-1.5 text-[9px] font-medium transition ${
-                        active
-                          ? "bg-violet-500/15 text-violet-400"
-                          : "text-zinc-600 hover:text-zinc-300"
-                      }`}
-                    >
-                      {timeframe === "1h"
-                        ? "1H"
-                        : timeframe}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* CANDLE CHARTS */}
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-3">
-              {symbols.map((symbol) => {
-                const market = markets.find(
-                  (item) =>
-                    item.symbol === symbol
-                );
-
-                return (
-                  <div
-                    key={`${symbol}-chart`}
-                    className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0a0c10]"
-                  >
-                    <div className="flex items-center justify-between border-b border-white/[0.05] px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.035] text-[8px] font-semibold text-zinc-400">
-                          {symbol.slice(0, 3)}
-                        </div>
-
-                        <div>
-                          <p className="text-[11px] font-medium">
-                            {symbol}
-                          </p>
-
-                          <p className="mt-0.5 text-[8px] text-zinc-700">
-                            Bybit Perpetual
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-[10px] font-medium text-zinc-300">
-                          {formatPrice(
-                            market?.price ?? null
-                          )}
-                        </p>
-
-                        <p className="mt-0.5 text-[8px] text-zinc-700">
-                          {selectedTimeframe === "1h"
-                            ? "1H"
-                            : selectedTimeframe}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="px-1 pb-1">
-                      <MarketCandleChart
-                        symbol={symbol}
-                        timeframe={
-                          selectedTimeframe
-                        }
-                        livePrice={
-                          market?.price ?? null
-                        }
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* TECHNICAL CONTEXT */}
-
-            <div className="mt-3 grid gap-3 xl:grid-cols-3">
-              {markets.map((market) => (
-                <div
-                  key={`${market.symbol}-technical`}
-                  className="rounded-2xl border border-white/[0.06] bg-[#0a0c10] p-4"
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Activity
-                        size={14}
-                        className="text-cyan-400"
-                      />
-
-                      <span className="text-[11px] font-medium">
-                        {market.symbol}
-                      </span>
-                    </div>
-
-                    <span className="text-[9px] text-zinc-700">
-                      1H technical context
-                    </span>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <p className="text-[8px] text-zinc-700">
-                        RSI
-                      </p>
-
-                      <p className="mt-1.5 text-[11px] font-medium">
-                        {formatNumber(
-                          market.rsi,
-                          1
-                        )}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-[8px] text-zinc-700">
-                        EMA 20
-                      </p>
-
-                      <p className="mt-1.5 text-[11px] font-medium">
-                        {formatPrice(
-                          market.ema20
-                        )}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-[8px] text-zinc-700">
-                        EMA 50
-                      </p>
-
-                      <p className="mt-1.5 text-[11px] font-medium">
-                        {formatPrice(
-                          market.ema50
-                        )}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-[8px] text-zinc-700">
-                        ATR
-                      </p>
-
-                      <p className="mt-1.5 text-[11px] font-medium">
-                        {formatNumber(
-                          market.atr,
-                          2
-                        )}
-                      </p>
-                    </div>
-                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* MARKET MONITOR */}
+                <div className="p-2">
 
-            <div className="mt-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0a0c10]">
-              <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4">
-                <div>
-                  <h2 className="text-[13px] font-medium">
-                    Market monitor
-                  </h2>
+                  <MarketCandleChart
+                    symbol={
+                      selectedMarket.symbol
+                    }
+                    timeframe={
+                      selectedTimeframe
+                    }
+                    livePrice={
+                      selectedMarket.price
+                    }
+                  />
 
-                  <p className="mt-1 text-[10px] text-zinc-700">
-                    Live prices + analytical context
-                  </p>
                 </div>
+
+              </section>
+
+              <section className="ha-panel p-5">
 
                 <div className="flex items-center gap-2">
-                  <span className="flex items-center gap-1.5 text-[9px] text-emerald-400">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                    Live feed
-                  </span>
 
-                  <ArrowUpRight
-                    size={12}
-                    className="text-zinc-700"
+                  <BrainCircuit
+                    size={13}
+                    className="text-violet-400"
                   />
+
+                  <div>
+
+                    <h2 className="text-[11px] font-medium text-zinc-200">
+                      Alpha Context
+                    </h2>
+
+                    <p className="mt-0.5 text-[7px] text-zinc-700">
+                      Current 1H analytical state
+                    </p>
+
+                  </div>
+
                 </div>
+
+                <div className="mt-5 rounded-xl border border-white/[0.05] bg-white/[0.012] p-4">
+
+                  <p className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+                    Current Bias
+                  </p>
+
+                  <div className="mt-2 flex items-end justify-between">
+
+                    <div>
+
+                      <p
+                        className={`text-[21px] font-semibold ${directionClass(
+                          selectedMarket.bias
+                        )}`}
+                      >
+                        {prettyDirection(
+                          selectedMarket.bias
+                        )}
+                      </p>
+
+                      <p className="mt-1 text-[7px] text-zinc-700">
+                        {selectedMarket.confidence !==
+                        null
+                          ? `${selectedMarket.confidence}% confidence`
+                          : "—"}
+                      </p>
+
+                    </div>
+
+                    <p
+                      className={`ha-number text-[18px] font-semibold ${directionClass(
+                        selectedMarket.bias
+                      )}`}
+                    >
+                      {selectedMarket.score !==
+                      null
+                        ? `${
+                            selectedMarket.score >
+                            0
+                              ? "+"
+                              : ""
+                          }${selectedMarket.score}`
+                        : "—"}
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+
+                  <ContextStat
+                    icon={Activity}
+                    label="Trend"
+                    value={prettyDirection(
+                      selectedMarket.trendDirection
+                    )}
+                    detail={
+                      selectedMarket.trendStrength !==
+                      null
+                        ? `${formatNumber(
+                            selectedMarket.trendStrength,
+                            0
+                          )}% strength`
+                        : "—"
+                    }
+                    direction={
+                      selectedMarket.trendDirection
+                    }
+                  />
+
+                  <ContextStat
+                    icon={Gauge}
+                    label="Momentum"
+                    value={prettyDirection(
+                      selectedMarket.momentumDirection
+                    )}
+                    detail={
+                      selectedMarket.momentumStrength !==
+                      null
+                        ? `${formatNumber(
+                            selectedMarket.momentumStrength,
+                            0
+                          )}% strength`
+                        : "—"
+                    }
+                    direction={
+                      selectedMarket.momentumDirection
+                    }
+                  />
+
+                  <ContextStat
+                    icon={Waves}
+                    label="Volume"
+                    value={
+                      selectedMarket.volumeCondition
+                    }
+                    detail={
+                      selectedMarket.volumeRatio !==
+                      null
+                        ? `${selectedMarket.volumeRatio.toFixed(
+                            2
+                          )}x average`
+                        : "—"
+                    }
+                  />
+
+                  <ContextStat
+                    icon={Gauge}
+                    label="Volatility"
+                    value={
+                      selectedMarket.volatilityLevel
+                    }
+                    detail={
+                      selectedMarket.volatilityPercentage !==
+                      null
+                        ? `${selectedMarket.volatilityPercentage.toFixed(
+                            2
+                          )}%`
+                        : "ATR context"
+                    }
+                  />
+
+                </div>
+
+              </section>
+
+            </div>
+
+            {/* TECHNICAL + FEED */}
+
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+
+              <section className="ha-panel p-5">
+
+                <div className="flex items-center gap-2">
+
+                  <BarChart3
+                    size={12}
+                    className="text-cyan-400"
+                  />
+
+                  <h2 className="text-[11px] font-medium text-zinc-200">
+                    Technical Context
+                  </h2>
+
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+                  <TechnicalStat
+                    label="RSI 14"
+                    value={formatNumber(
+                      selectedMarket.rsi,
+                      1
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="EMA 20"
+                    value={formatPrice(
+                      selectedMarket.ema20
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="EMA 50"
+                    value={formatPrice(
+                      selectedMarket.ema50
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="ATR 14"
+                    value={formatNumber(
+                      selectedMarket.atr,
+                      2
+                    )}
+                  />
+
+                </div>
+
+              </section>
+
+              <section className="ha-panel p-5">
+
+                <div className="flex items-center gap-2">
+
+                  <Radio
+                    size={12}
+                    className="text-violet-400"
+                  />
+
+                  <h2 className="text-[11px] font-medium text-zinc-200">
+                    Live Market Feed
+                  </h2>
+
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+                  <TechnicalStat
+                    label="Last"
+                    value={formatPrice(
+                      selectedMarket.price
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="Bid"
+                    value={formatPrice(
+                      selectedMarket.bidPrice
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="Ask"
+                    value={formatPrice(
+                      selectedMarket.askPrice
+                    )}
+                  />
+
+                  <TechnicalStat
+                    label="Mark"
+                    value={formatPrice(
+                      selectedMarket.markPrice
+                    )}
+                  />
+
+                </div>
+
+              </section>
+
+            </div>
+
+            {/* SELECTED MTF */}
+
+            <section className="ha-panel mt-3 p-5">
+
+              <div className="flex items-center justify-between">
+
+                <div className="flex items-center gap-2">
+
+                  <Activity
+                    size={13}
+                    className="text-violet-400"
+                  />
+
+                  <div>
+
+                    <h2 className="text-[11px] font-medium text-zinc-200">
+                      Multi-Timeframe Intelligence
+                    </h2>
+
+                    <p className="mt-0.5 text-[7px] text-zinc-700">
+                      {selectedMarket.symbol}
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <span className="text-[7px] text-zinc-700">
+                  1m → 5m → 15m → 1h
+                </span>
+
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+
+                {MTF_TIMEFRAMES.map(
+                  (
+                    timeframe
+                  ) => {
+                    const context =
+                      selectedMtf.find(
+                        (
+                          item
+                        ) =>
+                          item.timeframe ===
+                          timeframe
+                      );
+
+                    const bias =
+                      context?.bias ??
+                      "NEUTRAL";
+
+                    return (
+                      <div
+                        key={
+                          timeframe
+                        }
+                        className={`rounded-xl border p-4 ${directionBg(
+                          bias
+                        )}`}
+                      >
+
+                        <div className="flex items-center justify-between">
+
+                          <span className="text-[9px] font-semibold text-zinc-300">
+                            {timeframe}
+                          </span>
+
+                          {bias ===
+                          "BULLISH" ? (
+                            <TrendingUp
+                              size={11}
+                              className="text-emerald-400"
+                            />
+                          ) : bias ===
+                            "BEARISH" ? (
+                            <TrendingDown
+                              size={11}
+                              className="text-red-400"
+                            />
+                          ) : (
+                            <Activity
+                              size={11}
+                              className="text-zinc-600"
+                            />
+                          )}
+
+                        </div>
+
+                        <p
+                          className={`mt-4 text-[12px] font-semibold ${directionClass(
+                            bias
+                          )}`}
+                        >
+                          {mtfLoading
+                            ? "..."
+                            : context?.success
+                            ? prettyDirection(
+                                bias
+                              )
+                            : "Unavailable"}
+                        </p>
+
+                        <div className="mt-4 space-y-2 border-t border-white/[0.04] pt-3">
+
+                          <MtfRow
+                            label="Score"
+                            value={
+                              context?.score !==
+                                null &&
+                              context?.score !==
+                                undefined
+                                ? `${
+                                    context.score >
+                                    0
+                                      ? "+"
+                                      : ""
+                                  }${context.score}`
+                                : "—"
+                            }
+                          />
+
+                          <MtfRow
+                            label="Confidence"
+                            value={
+                              context?.confidence !==
+                                null &&
+                              context?.confidence !==
+                                undefined
+                                ? `${context.confidence}%`
+                                : "—"
+                            }
+                          />
+
+                          <MtfRow
+                            label="Trend"
+                            value={
+                              context
+                                ? prettyDirection(
+                                    context.trendDirection
+                                  )
+                                : "—"
+                            }
+                          />
+
+                          <MtfRow
+                            label="Momentum"
+                            value={
+                              context
+                                ? prettyDirection(
+                                    context.momentumDirection
+                                  )
+                                : "—"
+                            }
+                          />
+
+                        </div>
+
+                      </div>
+                    );
+                  }
+                )}
+
+              </div>
+
+            </section>
+
+            {/* MONITOR */}
+
+            <section className="ha-panel mt-3 overflow-hidden">
+
+              <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4">
+
+                <div>
+
+                  <h2 className="text-[11px] font-medium text-zinc-200">
+                    Market Monitor
+                  </h2>
+
+                  <p className="mt-0.5 text-[7px] text-zinc-700">
+                    Live prices and analytical state
+                  </p>
+
+                </div>
+
+                <span className="flex items-center gap-1.5 text-[7px] text-emerald-400">
+
+                  <span className="ha-live-dot" />
+
+                  BYBIT
+
+                </span>
+
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1050px]">
+
+                <table className="w-full min-w-[850px]">
+
                   <thead>
-                    <tr className="border-b border-white/[0.05] text-left">
+
+                    <tr className="border-b border-white/[0.04] text-left">
+
                       {[
                         "Market",
-                        "Live Price",
+                        "Price",
                         "24H",
-                        "Regime",
-                        "Alpha",
+                        "Bias",
+                        "Score",
                         "Confidence",
                         "Volume",
                         "RSI",
-                        "Action",
-                      ].map((heading) => (
-                        <th
-                          key={heading}
-                          className={`px-5 py-3 text-[9px] font-medium uppercase tracking-wider text-zinc-700 ${
-                            heading === "Action"
-                              ? "text-right"
-                              : ""
-                          }`}
-                        >
-                          {heading}
-                        </th>
-                      ))}
+                      ].map(
+                        (
+                          heading
+                        ) => (
+                          <th
+                            key={
+                              heading
+                            }
+                            className="px-5 py-3 text-[7px] font-medium uppercase tracking-[0.1em] text-zinc-700"
+                          >
+                            {heading}
+                          </th>
+                        )
+                      )}
+
                     </tr>
+
                   </thead>
 
                   <tbody>
-                    {markets.map((market) => {
-                      const bullish =
-                        market.regime ===
-                        "BULLISH";
 
-                      const bearish =
-                        market.regime ===
-                        "BEARISH";
+                    {markets.map(
+                      (
+                        market
+                      ) => {
+                        const positive =
+                          (
+                            market.change24h ??
+                            0
+                          ) >= 0;
 
-                      const positive =
-                        (market.change24h ?? 0) >=
-                        0;
+                        return (
+                          <tr
+                            key={
+                              market.symbol
+                            }
+                            onClick={() =>
+                              setSelectedSymbol(
+                                market.symbol
+                              )
+                            }
+                            className={`cursor-pointer border-b border-white/[0.035] transition last:border-0 ${
+                              selectedSymbol ===
+                              market.symbol
+                                ? "bg-violet-500/[0.025]"
+                                : "hover:bg-white/[0.012]"
+                            }`}
+                          >
 
-                      return (
-                        <tr
-                          key={market.symbol}
-                          className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.015]"
-                        >
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.035] text-[9px] font-semibold text-zinc-400">
-                                {market.symbol.slice(
-                                  0,
-                                  3
-                                )}
-                              </div>
+                            <td className="px-5 py-4 text-[9px] font-medium text-zinc-300">
+                              {market.symbol}
+                            </td>
 
-                              <div>
-                                <p className="text-[11px] font-medium">
-                                  {market.symbol}
-                                </p>
+                            <td className="ha-number px-5 py-4 text-[9px] text-zinc-300">
+                              {formatPrice(
+                                market.price
+                              )}
+                            </td>
 
-                                <p className="mt-0.5 text-[8px] text-zinc-700">
-                                  Bybit Perpetual
-                                </p>
-                              </div>
-                            </div>
-                          </td>
+                            <td className="px-5 py-4">
 
-                          <td className="px-5 py-4 text-[11px] font-medium">
-                            {formatPrice(
-                              market.price
-                            )}
-                          </td>
+                              <span
+                                className={`text-[8px] ${
+                                  market.change24h ===
+                                  null
+                                    ? "text-zinc-700"
+                                    : positive
+                                    ? "text-emerald-400"
+                                    : "text-red-400"
+                                }`}
+                              >
+                                {market.change24h !==
+                                null
+                                  ? `${
+                                      positive
+                                        ? "+"
+                                        : ""
+                                    }${market.change24h.toFixed(
+                                      2
+                                    )}%`
+                                  : "—"}
+                              </span>
 
-                          <td className="px-5 py-4">
-                            <span
-                              className={
-                                positive
-                                  ? "text-[11px] text-emerald-400"
-                                  : "text-[11px] text-red-400"
-                              }
-                            >
-                              {market.change24h !==
-                              null
-                                ? `${positive ? "+" : ""}${market.change24h.toFixed(2)}%`
-                                : "—"}
-                            </span>
-                          </td>
+                            </td>
 
-                          <td className="px-5 py-4">
-                            <span
-                              className={`rounded-md px-2 py-1 text-[9px] ${
-                                bullish
-                                  ? "bg-emerald-500/10 text-emerald-400"
-                                  : bearish
-                                    ? "bg-red-500/10 text-red-400"
-                                    : "bg-zinc-500/10 text-zinc-500"
-                              }`}
-                            >
-                              {market.regime}
-                            </span>
-                          </td>
+                            <td className="px-5 py-4">
 
-                          <td className="px-5 py-4">
-                            <span
-                              className={`text-[11px] font-medium ${
-                                (market.score ??
-                                  0) > 0
-                                  ? "text-emerald-400"
-                                  : (market.score ??
-                                        0) < 0
-                                    ? "text-red-400"
-                                    : "text-zinc-500"
-                              }`}
+                              <DirectionBadge
+                                direction={
+                                  market.bias
+                                }
+                              />
+
+                            </td>
+
+                            <td
+                              className={`ha-number px-5 py-4 text-[9px] ${directionClass(
+                                market.bias
+                              )}`}
                             >
                               {market.score !==
                               null
-                                ? `${market.score > 0 ? "+" : ""}${market.score}`
+                                ? `${
+                                    market.score >
+                                    0
+                                      ? "+"
+                                      : ""
+                                  }${market.score}`
                                 : "—"}
-                            </span>
-                          </td>
+                            </td>
 
-                          <td className="px-5 py-4 text-[11px] text-zinc-400">
-                            {market.confidence !==
-                            null
-                              ? `${market.confidence}%`
-                              : "—"}
-                          </td>
+                            <td className="px-5 py-4 text-[8px] text-zinc-500">
+                              {market.confidence !==
+                              null
+                                ? `${market.confidence}%`
+                                : "—"}
+                            </td>
 
-                          <td className="px-5 py-4 text-[11px] text-zinc-400">
-                            {market.volumeRatio !==
-                            null
-                              ? `${market.volumeRatio.toFixed(2)}x`
-                              : "—"}
-                          </td>
+                            <td className="px-5 py-4 text-[8px] text-zinc-500">
+                              {market.volumeRatio !==
+                              null
+                                ? `${market.volumeRatio.toFixed(
+                                    2
+                                  )}x`
+                                : "—"}
+                            </td>
 
-                          <td className="px-5 py-4 text-[11px] text-zinc-400">
-                            {formatNumber(
-                              market.rsi,
-                              1
-                            )}
-                          </td>
+                            <td className="px-5 py-4 text-[8px] text-zinc-500">
+                              {formatNumber(
+                                market.rsi,
+                                1
+                              )}
+                            </td>
 
-                          <td className="px-5 py-4 text-right">
-                            <button className="rounded-lg border border-white/[0.06] px-3 py-1.5 text-[9px] text-zinc-600 transition hover:border-violet-500/20 hover:text-violet-400">
-                              Analyze
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          </tr>
+                        );
+                      }
+                    )}
+
                   </tbody>
+
                 </table>
+
               </div>
+
+            </section>
+
+            {/* POLICY */}
+
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-white/[0.045] bg-white/[0.01] px-4 py-3">
+
+              <BrainCircuit
+                size={11}
+                className="mt-0.5 shrink-0 text-violet-400"
+              />
+
+              <p className="text-[7px] leading-4 text-zinc-700">
+                Market Intelligence is a research layer. Breadth, regime and current bias do not directly publish trades. Official signals remain controlled by Scanner → Quality Gate → Publisher → Lifecycle.
+              </p>
+
             </div>
 
-            {/* INTELLIGENCE */}
+          </>
+        )}
 
-            <div className="mt-3 grid gap-3 lg:grid-cols-3">
-              <div className="rounded-2xl border border-violet-500/10 bg-violet-500/[0.025] p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
-                    <Bot size={17} />
-                  </div>
-
-                  <div>
-                    <p className="text-[12px] font-medium">
-                      Alpha Context
-                    </p>
-
-                    <p className="mt-1 text-[9px] text-zinc-700">
-                      Analytical layer
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-[10px] leading-5 text-zinc-600">
-                  Live market data is combined with
-                  trend, momentum, volume and
-                  volatility context.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0a0c10] p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
-                    <LineChart size={17} />
-                  </div>
-
-                  <div>
-                    <p className="text-[12px] font-medium">
-                      Multi-timeframe
-                    </p>
-
-                    <p className="mt-1 text-[9px] text-zinc-700">
-                      Macro → entry
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-[10px] leading-5 text-zinc-600">
-                  1H, 15M, 5M and 1M provide layered
-                  market structure for future signals.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0a0c10] p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-                    <ShieldCheck size={17} />
-                  </div>
-
-                  <div>
-                    <p className="text-[12px] font-medium">
-                      Risk first
-                    </p>
-
-                    <p className="mt-1 text-[9px] text-zinc-700">
-                      Before execution
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-[10px] leading-5 text-zinc-600">
-                  Confirmed signals will pass through
-                  the deterministic risk engine before
-                  execution.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </section>
       </div>
-    </main>
+
+    </HiddenAlphaShell>
+  );
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  tone = "neutral",
+  direction,
+}: {
+  icon: typeof Activity;
+
+  label: string;
+
+  value: string;
+
+  tone?:
+    | "neutral"
+    | "green"
+    | "red";
+
+  direction?: Direction;
+}) {
+  let valueClass =
+    "text-zinc-300";
+
+  if (
+    tone === "green"
+  ) {
+    valueClass =
+      "text-emerald-400";
+  }
+
+  if (
+    tone === "red"
+  ) {
+    valueClass =
+      "text-red-400";
+  }
+
+  if (direction) {
+    valueClass =
+      directionClass(
+        direction
+      );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/[0.055] bg-[#090c12] p-3">
+
+      <div className="flex items-center gap-2">
+
+        <Icon
+          size={11}
+          className="text-zinc-700"
+        />
+
+        <span className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+          {label}
+        </span>
+
+      </div>
+
+      <p
+        className={`mt-2 text-[10px] font-medium ${valueClass}`}
+      >
+        {value}
+      </p>
+
+    </div>
+  );
+}
+
+function BreadthMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+
+  value: string;
+
+  detail?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.05] bg-white/[0.012] p-3">
+
+      <p className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+        {label}
+      </p>
+
+      <p className="ha-number mt-2 text-[13px] font-semibold text-zinc-300">
+        {value}
+      </p>
+
+      {detail && (
+        <p className="mt-1 text-[7px] text-zinc-700">
+          {detail}
+        </p>
+      )}
+
+    </div>
+  );
+}
+
+function DirectionBadge({
+  direction,
+}: {
+  direction: Direction;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-md border px-2 py-1 text-[7px] font-medium ${directionBg(
+        direction
+      )} ${directionClass(
+        direction
+      )}`}
+    >
+      {direction}
+    </span>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+}: {
+  label: string;
+
+  value: string;
+}) {
+  return (
+    <div>
+
+      <p className="text-[6px] uppercase tracking-[0.1em] text-zinc-700">
+        {label}
+      </p>
+
+      <p className="ha-number mt-1 text-[8px] text-zinc-400">
+        {value}
+      </p>
+
+    </div>
+  );
+}
+
+function ContextStat({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  direction,
+}: {
+  icon: typeof Activity;
+
+  label: string;
+
+  value: string;
+
+  detail: string;
+
+  direction?: Direction;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.045] bg-white/[0.01] p-3">
+
+      <div className="flex items-center gap-2">
+
+        <Icon
+          size={10}
+          className="text-zinc-700"
+        />
+
+        <span className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+          {label}
+        </span>
+
+      </div>
+
+      <p
+        className={`mt-2 text-[9px] font-medium ${
+          direction
+            ? directionClass(
+                direction
+              )
+            : "text-zinc-400"
+        }`}
+      >
+        {value}
+      </p>
+
+      <p className="mt-1 text-[7px] text-zinc-700">
+        {detail}
+      </p>
+
+    </div>
+  );
+}
+
+function TechnicalStat({
+  label,
+  value,
+}: {
+  label: string;
+
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.045] bg-white/[0.01] p-3">
+
+      <p className="text-[7px] uppercase tracking-[0.1em] text-zinc-700">
+        {label}
+      </p>
+
+      <p className="ha-number mt-2 text-[10px] font-medium text-zinc-300">
+        {value}
+      </p>
+
+    </div>
+  );
+}
+
+function MtfRow({
+  label,
+  value,
+}: {
+  label: string;
+
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+
+      <span className="text-[7px] text-zinc-700">
+        {label}
+      </span>
+
+      <span className="text-[7px] font-medium text-zinc-500">
+        {value}
+      </span>
+
+    </div>
   );
 }

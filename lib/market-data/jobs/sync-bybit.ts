@@ -8,49 +8,88 @@ const SYMBOLS = [
 
 const TIMEFRAMES = [
   "1m",
-  "3m",
   "5m",
   "15m",
-  "30m",
   "1h",
-  "2h",
-  "4h",
-  "6h",
-  "12h",
-  "1d",
-  "1w",
-  "1M",
 ];
 
-export async function syncBybitMarkets() {
-  const results = [];
+type SyncResult = {
+  success: boolean;
+  symbol: string;
+  timeframe: string;
+  count?: number;
+  error?: string;
+};
 
-  for (const symbol of SYMBOLS) {
-    for (const timeframe of TIMEFRAMES) {
-      try {
-        const result = await ingestBybitCandles({
-          symbol,
-          timeframe,
-          limit: 100,
-        });
+async function syncOne(
+  symbol: string,
+  timeframe: string
+): Promise<SyncResult> {
+  try {
+    const result =
+      await ingestBybitCandles({
+        symbol,
+        timeframe,
 
-        results.push({
-          success: true,
-          ...result,
-        });
-      } catch (error) {
-        results.push({
-          success: false,
-          symbol,
-          timeframe,
-          error:
-            error instanceof Error
-              ? error.message
-              : String(error),
-        });
-      }
-    }
+        /*
+         * Pull latest 100 candles.
+         *
+         * Upsert keeps the operation safe
+         * and also fills recent gaps if
+         * HiddenAlpha has been offline.
+         */
+        limit: 100,
+      });
+
+    return {
+      success: true,
+      symbol,
+      timeframe,
+      count: result.count,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      symbol,
+      timeframe,
+      error:
+        error instanceof Error
+          ? error.message
+          : String(error),
+    };
   }
+}
+
+export async function syncBybitMarkets() {
+  /*
+   * 3 symbols × 4 engine timeframes.
+   *
+   * All combinations are independent,
+   * so run them concurrently rather
+   * than waiting sequentially.
+   */
+
+  const jobs =
+    SYMBOLS.flatMap(
+      (symbol) =>
+        TIMEFRAMES.map(
+          (timeframe) => ({
+            symbol,
+            timeframe,
+          })
+        )
+    );
+
+  const results =
+    await Promise.all(
+      jobs.map(
+        ({ symbol, timeframe }) =>
+          syncOne(
+            symbol,
+            timeframe
+          )
+      )
+    );
 
   return results;
 }
