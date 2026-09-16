@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   Activity,
@@ -12,6 +12,7 @@ import {
   Command,
   Database,
   Home,
+  Radar,
   Search,
   Star,
   Wrench,
@@ -25,6 +26,13 @@ import EngineHealthStatus from "@/components/engine-health-status";
 type Props = {
   children: ReactNode;
 };
+
+type StoredAlert = {
+  read?: boolean;
+};
+
+const ALERTS_KEY =
+  "hiddenalpha:alerts:v1";
 
 const navigation = [
   {
@@ -48,20 +56,20 @@ const navigation = [
   {
     label: "Scanner",
     href: "/scanner",
-    icon: Search,
-    available: false,
+    icon: Radar,
+    available: true,
   },
   {
     label: "Watchlist",
     href: "/watchlist",
     icon: Star,
-    available: false,
+    available: true,
   },
   {
     label: "Tools",
     href: "/tools",
     icon: Wrench,
-    available: false,
+    available: true,
   },
   {
     label: "Performance",
@@ -73,15 +81,151 @@ const navigation = [
     label: "Alerts",
     href: "/alerts",
     icon: Bell,
-    available: false,
+    available: true,
   },
 ];
+
+function getUnreadAlertCount() {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
+    return 0;
+  }
+
+  try {
+    const stored =
+      window.localStorage.getItem(
+        ALERTS_KEY
+      );
+
+    if (!stored) {
+      return 0;
+    }
+
+    const parsed: unknown =
+      JSON.parse(stored);
+
+    if (
+      !Array.isArray(parsed)
+    ) {
+      return 0;
+    }
+
+    return parsed.filter(
+      (
+        item:
+          StoredAlert
+      ) =>
+        item &&
+        item.read !== true
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
+function formatBadgeCount(
+  count: number
+) {
+  if (
+    count > 99
+  ) {
+    return "99+";
+  }
+
+  return String(
+    count
+  );
+}
 
 export default function HiddenAlphaShell({
   children,
 }: Props) {
   const pathname =
     usePathname();
+
+  const [
+    unreadAlerts,
+    setUnreadAlerts,
+  ] =
+    useState(0);
+
+  /*
+   * ========================================
+   * GLOBAL ALERT BADGE
+   * ========================================
+   *
+   * Alert v1 is stored in localStorage.
+   * Storage events only fire reliably
+   * across different tabs, so the shell
+   * also performs a lightweight periodic
+   * local read for same-tab updates.
+   */
+
+  useEffect(() => {
+    function syncUnread() {
+      setUnreadAlerts(
+        getUnreadAlertCount()
+      );
+    }
+
+    syncUnread();
+
+    const interval =
+      window.setInterval(
+        syncUnread,
+        3000
+      );
+
+    function handleStorage(
+      event: StorageEvent
+    ) {
+      if (
+        event.key ===
+        ALERTS_KEY
+      ) {
+        syncUnread();
+      }
+    }
+
+    function handleVisibility() {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        syncUnread();
+      }
+    }
+
+    window.addEventListener(
+      "storage",
+      handleStorage
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
+
+    return () => {
+      window.clearInterval(
+        interval
+      );
+
+      window.removeEventListener(
+        "storage",
+        handleStorage
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
+    };
+  }, [
+    pathname,
+  ]);
 
   return (
     <>
@@ -207,6 +351,38 @@ export default function HiddenAlphaShell({
                             LIVE
                           </span>
                         )}
+                        {item.label ===
+                          "Scanner" && (
+                          <span className="ml-auto rounded-md border border-violet-500/10 bg-violet-500/[0.06] px-1.5 py-0.5 text-[6px] font-medium uppercase tracking-[0.08em] text-violet-400">
+                            Active
+                          </span>
+                        )}
+
+                        {item.label ===
+                          "Watchlist" && (
+                          <span className="ml-auto rounded-md border border-amber-500/10 bg-amber-500/[0.05] px-1.5 py-0.5 text-[6px] font-medium uppercase tracking-[0.08em] text-amber-400">
+                            Active
+                          </span>
+                        )}
+
+                        {item.label ===
+                          "Tools" && (
+                          <span className="ml-auto rounded-md border border-cyan-500/10 bg-cyan-500/[0.05] px-1.5 py-0.5 text-[6px] font-medium uppercase tracking-[0.08em] text-cyan-400">
+                            Active
+                          </span>
+                        )}
+
+                        {item.label ===
+                          "Alerts" &&
+                          unreadAlerts >
+                            0 && (
+                            <span className="ml-auto flex min-w-[20px] items-center justify-center rounded-full border border-red-500/15 bg-red-500/[0.08] px-1.5 py-0.5 text-[6px] font-semibold text-red-400">
+                              {formatBadgeCount(
+                                unreadAlerts
+                              )}
+                            </span>
+                          )}
+
                       </Link>
                     );
                   }
@@ -337,18 +513,48 @@ export default function HiddenAlphaShell({
 
                   <EngineHealthStatus />
 
-                  {/* NOTIFICATION */}
+                  {/* ALERT BUTTON */}
 
-                  <button className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.055] bg-[#0a0d13]">
+                  <Link
+                    href="/alerts"
+                    className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                      pathname.startsWith(
+                        "/alerts"
+                      )
+                        ? "border-violet-500/15 bg-violet-500/[0.08]"
+                        : "border-white/[0.055] bg-[#0a0d13] hover:border-white/[0.09]"
+                    }`}
+                    aria-label="Open alerts"
+                  >
 
                     <Bell
                       size={14}
-                      className="text-zinc-500"
+                      className={
+                        pathname.startsWith(
+                          "/alerts"
+                        )
+                          ? "text-violet-400"
+                          : unreadAlerts >
+                            0
+                          ? "text-amber-400"
+                          : "text-zinc-500"
+                      }
                     />
 
-                    <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-violet-500" />
+                    {unreadAlerts >
+                      0 && (
+                      <>
+                        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
 
-                  </button>
+                        <span className="absolute -right-1.5 -top-1.5 flex min-h-[15px] min-w-[15px] items-center justify-center rounded-full border border-[#07090d] bg-red-500 px-1 text-[5px] font-bold text-white">
+                          {formatBadgeCount(
+                            unreadAlerts
+                          )}
+                        </span>
+                      </>
+                    )}
+
+                  </Link>
 
                   {/* PROFILE */}
 
