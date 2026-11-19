@@ -80,7 +80,7 @@ const navigation = [
   { name: "Dashboard V2", href: "/v2", icon: Home, current: true },
   { name: "Market Desk", href: "/markets", icon: BarChart3 },
   { name: "AI Analysis", href: "/scanner", icon: BrainCircuit },
-  { name: "Trading Journal", href: "/performance", icon: BookOpen },
+  { name: "Trading Journal", href: "/v2/journal", icon: BookOpen },
   { name: "Risk Manager", href: "/v2/risk", icon: ShieldCheck },
   { name: "Strategy Lab", href: "/tools", icon: FlaskConical },
   { name: "Integrations", href: "/tools", icon: PlugZap },
