@@ -6,7 +6,7 @@ import { number, type SymbolKey } from "./instruments";
 
 type Quote = {
   price: number;
-  change24h: number;
+  change24h: number | null;
   fetchedAt: string;
   source: "WEBSOCKET" | "REST";
 };
@@ -74,16 +74,18 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         const now = Date.now();
         if (now - lastSocketUpdate < 1_000) return;
         lastSocketUpdate = now;
-        setState({
+        setState(previous => ({
           symbol,
           value: {
             price: ticker.lastPrice,
-            change24h: ticker.price24hChange,
+            change24h: ticker.has24hChange === false
+              ? (previous?.symbol === symbol ? previous.value?.change24h ?? null : null)
+              : ticker.price24hChange,
             fetchedAt: new Date(now).toISOString(),
             source: "WEBSOCKET",
           },
           error: "",
-        });
+        }));
       },
       status => {
         if (!active) return;
@@ -137,8 +139,10 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
   const q = state.value;
   return <div className="text-right">
     <div className="text-[20px] font-bold">{number(q.price)}</div>
-    <div className={"text-[12px] font-semibold " + (q.change24h >= 0 ? "text-[#19dba6]" : "text-[#ff657a]")}>
-      {q.change24h >= 0 ? "+" : ""}{q.change24h.toFixed(2)}% · Bybit 24h
+    <div className={"text-[12px] font-semibold " +
+      (q.change24h === null ? "text-[#87adbf]" : q.change24h >= 0 ? "text-[#19dba6]" : "text-[#ff657a]")}>
+      {q.change24h === null ? "24h change unavailable" :
+        (q.change24h >= 0 ? "+" : "") + q.change24h.toFixed(2) + "% · Bybit 24h"}
     </div>
     <div className="text-[9px] text-[#84aabc]">{q.source === "WEBSOCKET" ? "Live ticker" : "Snapshot"} · {new Date(q.fetchedAt).toLocaleTimeString()}</div>
   </div>;
