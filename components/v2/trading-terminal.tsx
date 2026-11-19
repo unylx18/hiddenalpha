@@ -28,6 +28,7 @@ type AnalysisState = {
   loading: boolean;
   data: Alpha | null;
   error: string;
+  stale: boolean;
 };
 
 const frameDuration: Record<string, number> = {
@@ -95,8 +96,7 @@ export default function TradingTerminal() {
   const state = analysisState?.key === analysisKey ? analysisState : null;
   const analysis = state?.data ?? null;
   const analyzedTimestamp = analysis ? Date.parse(analysis.timestamp) : NaN;
-  const oldData = analysis ? !Number.isFinite(analyzedTimestamp) ||
-    Date.now() - analyzedTimestamp > Math.max(15 * 60_000, (frameDuration[timeframe] ?? 900_000) * 3) : false;
+  const oldData = state?.stale ?? false;
   const currentBias = !analysis || oldData ? "NO TRADE" : analysis.market.bias;
   const filtered = order.filter(id => instruments[id].market === market &&
     (id.toLowerCase().includes(query.toLowerCase()) ||
@@ -123,7 +123,7 @@ export default function TradingTerminal() {
     const active = new AbortController();
     controller.current = active;
     const key = analysisKey;
-    setAnalysisState({key, loading: true, data: null, error: ""});
+    setAnalysisState({key, loading: true, data: null, error: "", stale: false});
     try {
       const qs = new URLSearchParams({symbol, timeframe});
       const result = await fetch("/api/trading/context?" + qs.toString(), {
@@ -139,10 +139,13 @@ export default function TradingTerminal() {
       if (data.symbol !== symbol || data.timeframe.toLowerCase() !== timeframe.toLowerCase()) {
         throw new Error("Context response mismatch");
       }
-      if (!active.signal.aborted) setAnalysisState({key, loading: false, data, error: ""});
+      const sampledAt = Date.parse(data.timestamp);
+      const stale = !Number.isFinite(sampledAt) ||
+        Date.now() - sampledAt > Math.max(15 * 60_000, (frameDuration[timeframe] ?? 900_000) * 3);
+      if (!active.signal.aborted) setAnalysisState({key, loading: false, data, error: "", stale});
     } catch (error) {
       if (!active.signal.aborted) setAnalysisState({
-        key, loading: false, data: null,
+        key, loading: false, data: null, stale: false,
         error: error instanceof Error ? error.message : "Market context unavailable",
       });
     }
