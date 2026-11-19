@@ -37,10 +37,11 @@ const PAIRS: Record<ForexSymbol, string> = {
   GBPUSD: "GBP_USD",
 };
 
-// OANDA's current published granularity table does not list M3.
-// Do not invent a 3-minute candle or silently use M1 as M3.
+// OANDA does not list native M3 in the current public granularity table.
+// Aggregate three *actual completed M1 candles* into each 3m interval.
 const GRANULARITIES: Record<string, string> = {
   "1m": "M1",
+  "3m": "M1",
   "5m": "M5",
   "15m": "M15",
   "1h": "H1",
@@ -69,6 +70,38 @@ function parseCandle(item: RawOandaCandle): ForexCandle | null {
       high < Math.max(open, close, low) ||
       low > Math.min(open, close, high)) return null;
   return { timestamp: new Date(openTime).toISOString(), openTime, open, high, low, close, volume };
+}
+
+/**
+ * Actual 3-minute OHLCV is aggregated only from three consecutive complete
+ * OANDA M1 bars, never interpolated or fabricated. Weekend gaps are skipped.
+ */
+function aggregateThreeMinuteCandles(minutes: ForexCandle[]): ForexCandle[] {
+  const period = 180_000;
+  const buckets = new Map<number, ForexCandle[]>();
+  for (const candle of minutes) {
+    const start = Math.floor(candle.openTime / period) * period;
+    const group = buckets.get(start) ?? [];
+    group.push(candle);
+    buckets.set(start, group);
+  }
+  const result: ForexCandle[] = [];
+  for (const [start, group] of buckets) {
+    group.sort((a,b) => a.openTime-b.openTime);
+    if (group.length !== 3 ||
+        group.some((c,i) => c.openTime !== start + i*60_000)) continue;
+    const first = group[0], last = group[2];
+    result.push({
+      timestamp: new Date(start).toISOString(),
+      openTime: start,
+      open: first.open,
+      high: Math.max(...group.map(x=>x.high)),
+      low: Math.min(...group.map(x=>x.low)),
+      close: last.close,
+      volume: group.reduce((n,x)=>n+x.volume,0),
+    });
+  }
+  return result.sort((a,b)=>a.openTime-b.openTime);
 }
 
 export function isForexSymbol(symbol: string): symbol is ForexSymbol {
@@ -103,7 +136,7 @@ export async function getOandaCompletedCandles(
   );
   url.searchParams.set("granularity", granularity);
   url.searchParams.set("price", "M");
-  url.searchParams.set("count", String(Math.min(500, Math.max(210, limit))));
+  url.searchParams.set("count", String(timeframe === "3m" ? 1000 : Math.min(500, Math.max(210, limit))));
 
   const response = await fetch(url, {
     method: "GET",
@@ -141,5 +174,5 @@ export async function getOandaCompletedCandles(
     .filter((c): c is ForexCandle => c !== null)
     .sort((a, b) => a.openTime - b.openTime)
     .filter((c, i, arr) => i === 0 || c.openTime !== arr[i - 1].openTime);
-  return candles;
+  return timeframe === "3m" ? aggregateThreeMinuteCandles(candles) : candles;
 }
