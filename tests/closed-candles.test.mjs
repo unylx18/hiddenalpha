@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { completedCandlesNewestFirst } from "../lib/market-data/closed-candles.ts";
+import { completedCandlesNewestFirst, assertRecentCompletedCandle } from "../lib/market-data/closed-candles.ts";
 
 const now = Date.parse("2026-11-19T12:00:30Z");
 
@@ -28,6 +28,18 @@ test("multi-minute candle boundaries are respected", () => {
 
 test("unsupported timeframe fails closed", () => {
   assert.throws(() => completedCandlesNewestFirst([{ timestamp: "2026-11-19T11:59:00Z" }], "1M", now), /Unsupported/);
+});
+
+test("recent completed data passes the freshness gate", () => {
+  assert.doesNotThrow(() => assertRecentCompletedCandle(
+    [{ timestamp: "2026-11-19T11:59:00Z" }], "1m", now
+  ));
+});
+
+test("stale completed data cannot create new signals", () => {
+  assert.throws(() => assertRecentCompletedCandle(
+    [{ timestamp: "2026-11-19T11:40:00Z" }], "1m", now
+  ), /Stale/);
 });
 
 test("all privileged mutation handlers require server authorization", () => {
