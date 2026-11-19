@@ -81,6 +81,7 @@ const navigation = [
   { name: "Market Desk", href: "/markets", icon: BarChart3 },
   { name: "AI Analysis", href: "/scanner", icon: BrainCircuit },
   { name: "Trading Journal", href: "/v2/journal", icon: BookOpen },
+  { name: "Portfolio Analytics", href: "/v2/portfolio", icon: Wallet },
   { name: "Risk Manager", href: "/v2/risk", icon: ShieldCheck },
   { name: "Strategy Lab", href: "/tools", icon: FlaskConical },
   { name: "Integrations", href: "/tools", icon: PlugZap },
@@ -317,9 +318,9 @@ export default function TradingTerminal() {
             <div className="grid gap-3 xl:grid-cols-3">
               <section className={panel + " p-4"}>
                 <div className="flex items-center gap-2 text-[13px] font-bold"><Wallet size={16} className="text-[#20c6ee]"/> Portfolio Overview</div>
-                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Not connected</div>
-                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Portfolio values require authenticated broker or account data. No sample P&L is presented as real.</p>
-                <Link href="/performance" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">View existing performance (legacy) <ArrowUpRight size={12}/></Link>
+                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Manual Portfolio Ready</div>
+                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Track long-only holdings, manual mark prices and cash. Realized journal results remain separate; no broker sync or fabricated holdings.</p>
+                <Link href="/v2/portfolio" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">Open V2 Portfolio <ArrowUpRight size={12}/></Link>
               </section>
               <section className={panel + " p-4"}>
                 <div className="flex items-center gap-2 text-[13px] font-bold"><BookOpen size={16} className="text-[#20c6ee]"/> Trading Journal</div>
