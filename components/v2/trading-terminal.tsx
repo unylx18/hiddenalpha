@@ -29,6 +29,8 @@ type AnalysisState = {
   data: Alpha | null;
   error: string;
   stale: boolean;
+  provider: string;
+  volumeKind: string;
 };
 
 const frameDuration: Record<string, number> = {
@@ -136,15 +138,15 @@ export default function TradingTerminal() {
   }
 
   async function analyze() {
-    if (!crypto) return;
     controller.current?.abort();
     const active = new AbortController();
     controller.current = active;
     const key = analysisKey;
-    setAnalysisState({key, loading: true, data: null, error: "", stale: false});
+    setAnalysisState({key, loading: true, data: null, error: "", stale: false, provider: "", volumeKind: ""});
     try {
       const qs = new URLSearchParams({symbol, timeframe});
-      const result = await fetch("/api/v2/analysis?" + qs.toString(), {
+      const endpoint = crypto ? "/api/v2/analysis?" : "/api/v2/forex/analysis?";
+      const result = await fetch(endpoint + qs.toString(), {
         cache: "no-store", signal: active.signal,
       });
       const payload: unknown = await result.json();
@@ -154,6 +156,10 @@ export default function TradingTerminal() {
       if (!result.ok || response.success !== true || !data) {
         throw new Error(typeof response.error === "string" ? response.error : "Market context unavailable");
       }
+      if ((crypto && response.provider !== "bybit") ||
+          (!crypto && (response.provider !== "oanda" || response.volumeKind !== "price_updates"))) {
+        throw new Error("Wrong market data source returned from provider");
+      }
       if (data.symbol !== symbol || data.timeframe.toLowerCase() !== timeframe.toLowerCase()) {
         throw new Error("Context response mismatch");
       }
@@ -161,10 +167,11 @@ export default function TradingTerminal() {
       const duration = frameDuration[timeframe] ?? 900_000;
       const expiresAt = sampledAt + duration + Math.max(duration * 2, 120_000);
       const stale = !Number.isFinite(sampledAt) || Date.now() >= expiresAt;
-      if (!active.signal.aborted) setAnalysisState({key, loading: false, data, error: "", stale});
+      if (!active.signal.aborted) setAnalysisState({key, loading: false, data, error: "", stale,
+        provider: String(response.provider), volumeKind: String(response.volumeKind ?? "")});
     } catch (error) {
       if (!active.signal.aborted) setAnalysisState({
-        key, loading: false, data: null, stale: false,
+        key, loading: false, data: null, stale: false, provider: "", volumeKind: "",
         error: error instanceof Error ? error.message : "Market context unavailable",
       });
     }
@@ -264,16 +271,15 @@ export default function TradingTerminal() {
                     {currentBias}
                   </div>
                   <div className="mt-1 text-[10px] text-[#91b5c7]">
-                    {!crypto ? "Forex analysis connector not available" :
-                      !analysis ? "No live analysis requested yet" :
+                    {!analysis ? "No live analysis requested yet" :
                         oldData ? "Historical context is stale; not actionable" :
                           "Engine market bias, not a buy/sell instruction"}
                   </div>
                 </div>
-                <button type="button" onClick={analyze} disabled={!crypto || state?.loading === true}
+                <button type="button" onClick={analyze} disabled={state?.loading === true}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#00b9e6] bg-[#075f84] px-3 py-3 text-[12px] font-bold text-white transition hover:bg-[#08799c] disabled:cursor-not-allowed disabled:border-[#36546a] disabled:bg-[#183447] disabled:text-[#82a1b0]">
                   {state?.loading ? <RefreshCw size={15} className="animate-spin"/> : <BrainCircuit size={16}/>}
-                  {!crypto ? "Forex Engine: Coming Soon" : state?.loading ? "Analyzing market..." : "Analyze with Alpha Engine"}
+                  {state?.loading ? "Analyzing market..." : crypto ? "Analyze with Alpha Engine" : "Analyze Forex via OANDA"}
                 </button>
                 {state?.error && <div role="alert" className="mt-3 rounded-lg border border-[#783e4a] bg-[#391a28] p-3 text-[11px] text-[#ffd3da]">
                   <CircleAlert size={13} className="mr-1 inline"/> {state.error}
@@ -289,10 +295,10 @@ export default function TradingTerminal() {
                   </div>
                 </div> : <div className="mt-4 rounded-lg border border-dashed border-[#1a455a] p-4 text-[11px] leading-5 text-[#90b3c3]">
                   <Gauge size={18} className="mb-2 text-[#1bcaf5]"/>
-                  Fast chart first. Alpha Engine computes from independent closed Bybit candles in memory, only when requested.
+                  Fast chart first. Alpha Engine computes from independent closed market candles in memory, only when requested. Forex requires server-side OANDA credentials.
                 </div>}
                 <p className="mt-4 text-[10px] leading-5 text-[#779daf]">
-                  *Confidence is an internal score, not an accuracy guarantee. TradingView chart data is separate from Bybit engine calculations.
+                  *Confidence is an internal score, not an accuracy guarantee. TradingView chart data is separate from the Bybit/OANDA engine feed. Forex volume is a count of price updates, not traded quantity.
                 </p>
               </section>
             </div>
@@ -302,10 +308,10 @@ export default function TradingTerminal() {
                 tone={analysis && !oldData && analysis.market.bias === "BULLISH" ? "text-[#1ddcb1]" : "text-[#c5d7df]"}/>
               <Metric label="Context Score" value={analysis ? String(analysis.market.score) + " / 100" : "—"} sub="Own Alpha Engine"/>
               <Metric label="Trend / Momentum" value={analysis ? analysis.trend.direction + " / " + analysis.momentum.direction : "—"} sub="Computed context"/>
-              <Metric label="Relative Volume" value={analysis ? analysis.volume.ratio.toFixed(2) + "×" : "—"} sub="Against recent candles"/>
+              <Metric label={crypto ? "Relative Volume" : "Relative Price Updates"} value={analysis ? analysis.volume.ratio.toFixed(2) + "×" : "—"} sub={crypto ? "Recent contract activity" : "OANDA price-update count"}/>
               <Metric label="Volatility" value={analysis ? analysis.volatility.level : "—"} sub={analysis?.volatility.percentage != null ? analysis.volatility.percentage.toFixed(2) + "%" : "Provider-dependent"}/>
               <Metric label="Data State" value={!crypto ? "Not connected" : state?.loading ? "Analyzing" : state?.error ? "Unavailable" : analysis ? oldData ? "Stale" : "Calculated" : "Not requested"}
-                sub="No fabricated market signals" tone={analysis && !oldData ? "text-[#14dbaa]" : "text-[#a3bfcc]"}/>
+                sub={crypto ? "Bybit read-only engine" : "OANDA read-only engine"} tone={analysis && !oldData ? "text-[#14dbaa]" : "text-[#a3bfcc]"}/>
             </div>
 
             <div className="grid gap-3 xl:grid-cols-3">
@@ -333,7 +339,7 @@ export default function TradingTerminal() {
               </section>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#123c51] pt-3 text-[10px] text-[#759cae]">
-              <div>TradingView hosts the chart. Alpha Engine fetches independent Bybit candles on request. Neither flow writes candles to Supabase.</div>
+              <div>TradingView hosts the chart. Alpha Engine fetches Bybit/OANDA candles on demand. Neither flow writes candles to Supabase.</div>
               <div className="flex flex-wrap gap-3">
                 <Link href="/tools" className="inline-flex items-center gap-1 text-[#1bcaf5]"><Wrench size={12}/> Existing tools</Link>
                 <Link href="/" className="inline-flex items-center gap-1 text-[#1bcaf5]"><ArrowUpRight size={12}/> Legacy dashboard</Link>
