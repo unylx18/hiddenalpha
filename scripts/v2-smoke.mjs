@@ -35,6 +35,12 @@ async function call(path) {
   return { response, body };
 }
 
+await check("V2 trading journal route exists", async () => {
+  const res = await fetch(base + "/v2/journal", { signal: AbortSignal.timeout(8_000) });
+  assert.equal(res.status, 200, "GET /v2/journal returned " + res.status);
+  assert.match(await res.text(), /Trading Journal/i);
+});
+
 await check("V2 risk manager route exists", async () => {
   const res = await fetch(base + "/v2/risk", { signal: AbortSignal.timeout(8_000) });
   assert.equal(res.status, 200, "GET /v2/risk returned " + res.status);
