@@ -8,6 +8,7 @@ import { Mark, AssetBadge } from "./brand";
 import { CandlestickChart } from "./candlestick-chart";
 import { MiniStat } from "./mini-stat";
 import LiveCryptoContext from "./live-crypto-context";
+import LiveMarketQuote from "./live-market-quote";
 
 export default function TradingTerminal() {
   const [market,setMarket]=useState<Market>("crypto");
@@ -44,8 +45,8 @@ export default function TradingTerminal() {
           {notice&&<div role="status" className="rounded-lg border border-[#1b6580] bg-[#0a3346] p-2 text-xs text-[#c8edff]">{notice}</div>}
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.9fr)_minmax(300px,0.76fr)]">
             <section className={panel+" overflow-hidden p-3"}>
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2"><div className="flex items-center gap-2"><AssetBadge id={symbol}/><div><div className="flex items-center gap-2"><strong className="text-[19px]">{symbol}</strong><ChevronDown size={13}/></div><span className="text-[10px] text-[#86a7b7]">{data.name}</span></div></div><div className="text-right"><div className="text-[20px] font-bold">{number(data.price)}</div><div className={"text-[12px] font-bold "+(data.change>=0?"text-[#19dba6]":"text-[#ff657a]")}>{pct(data.change)} · Sample</div></div></div>
-              <div className="mb-1 flex items-center gap-4 px-2 text-[10px] text-[#a8bfcb]"><span><span className="text-[#1bcaf5]">●</span> EMA 20</span><span><span className="text-[#b16bd7]">●</span> EMA 50</span><span className="ml-auto text-[#6f9baf]">SYNTHETIC CANDLES</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2"><div className="flex items-center gap-2"><AssetBadge id={symbol}/><div><div className="flex items-center gap-2"><strong className="text-[19px]">{symbol}</strong><ChevronDown size={13}/></div><span className="text-[10px] text-[#86a7b7]">{data.name}</span></div></div><LiveMarketQuote symbol={symbol}/></div>
+              <div className="mb-1 flex items-center gap-4 px-2 text-[10px] text-[#a8bfcb]"><span><span className="text-[#1bcaf5]">●</span> EMA 20</span><span><span className="text-[#b16bd7]">●</span> EMA 50</span><span className="ml-auto text-[#6f9baf]">BYBIT COMPLETED CANDLES · CRYPTO ONLY</span></div>
               <CandlestickChart symbol={symbol} timeframe={timeframe} indicators={indicators}/>
               <div className="flex flex-wrap items-center gap-2 border-t border-[#184559] pt-2 text-[10px]"><span className="rounded border border-[#1bcaf5] bg-[#073c53] px-3 py-1 text-[#e0faff]">Indicators</span>{["EMA","RSI","MACD","BB","ATR","Volume"].map(label=><button key={label} onClick={()=>setNotice(label+" indicator configuration is planned for the full implementation.")} className="rounded px-2 py-1 text-[#a4bcc8] hover:bg-[#164056] hover:text-white">{label}</button>)}</div>
             </section>
