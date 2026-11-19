@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { completedCandlesNewestFirst } from "@/lib/market-data/closed-candles";
 
 import {
   calculateEMA,
@@ -148,8 +149,7 @@ export async function calculateMarketIndicators(
    */
 
   const completedCandles =
-    candles
-      .slice(1)
+    completedCandlesNewestFirst(candles, timeframe)
       .map((candle) => ({
         timestamp:
           candle.timestamp,
