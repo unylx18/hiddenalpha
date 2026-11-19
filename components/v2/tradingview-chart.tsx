@@ -71,6 +71,10 @@ export default function TradingViewChart({
     attribution.appendChild(link);
     container.appendChild(attribution);
 
+    // Attach the widget container before the external loader so the script
+    // always runs against a connected DOM subtree.
+    host.appendChild(container);
+
     const script = document.createElement("script");
     script.type = "text/javascript";
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
@@ -99,7 +103,6 @@ export default function TradingViewChart({
       studies: [],
     });
     container.appendChild(script);
-    host.appendChild(container);
 
     return () => {
       host.replaceChildren();
