@@ -17,10 +17,11 @@ Do not display a derived forex signal until a provider adapter and instrument no
 - `app/v2/page.tsx` — isolated V2 page. Existing `/` still serves the legacy dashboard.
 - `components/v2/trading-terminal.tsx` — redesigned V2 workspace with user-triggered analysis.
 - `components/v2/tradingview-chart.tsx` — official TradingView widget and visible attribution.
-- `components/v2/live-market-quote.tsx` — read-only Bybit quote for selected Crypto.
+- `components/v2/live-market-quote.tsx` — read-only Bybit REST initial quote + one WebSocket stream for the selected Crypto, falling back to a single REST poll every 30 seconds if the socket fails.
 - `components/v2/instruments.ts` — **static symbol metadata only**; no demo prices, P&L, or bias.
 - `components/v2/brand.tsx` — interim vector mark; replace only when the exact approved logo file is available.
-- `app/api/v2/analysis/route.ts` — public-market-data, read-only Bybit context calculations without DB. Only three Crypto symbols and seven timeframes are accepted; no order execution.
+- `app/api/v2/analysis/route.ts` — public-market-data, read-only Bybit calculations without DB. Only three Crypto symbols and seven timeframes are accepted; no order execution. It rejects missing/stale/gapped closed candles, limits upstream fetch to 8 seconds, coalesces concurrent requests and caches results briefly per server instance (10–30 seconds).
+- `scripts/v2-smoke.mjs` — dependency-free local route validation, with optional read-only live Bybit analysis checks.
 
 Removed as unused V2-only code:
 - `components/v2/candlestick-chart.tsx` (custom candle chart).
@@ -54,6 +55,18 @@ and server-side signal jobs still depend on them.
 Future work: migrate the old market/scanner pages to lightweight adapters; only
 then remove browser startup sync and redundant historical candle storage. Keep
 history if it is needed for auditable backtests/signals, but it must not block UI rendering.
+
+## V2 performance and correctness tests
+- A TradingView chart should load without issuing any request to the candle database or Alpha Engine.
+- Only the active Crypto symbol opens one ticker WebSocket. When unavailable, REST fallback remains read-only; no candle sync.
+- A user pressing Analyze twice within a short period should receive an initial `cache: MISS` and a later `cache: HIT` where the same runtime instance survives.
+- `cache: COALESCED` can appear when concurrent requests are deduplicated.
+- Reject unsupported symbols/timeframes with HTTP 400. Reject stale/gapped/incomplete candle history with HTTP 503. Upstream errors return 502.
+- A closed-candle Alpha context must automatically become NO TRADE when its freshness window expires.
+- In-memory caching is per serverless instance, not distributed rate limiting. Add distributed API quotas/security policy before public production usage.
+- Verify with two CMD sessions: run `npm run dev` in one; in the other run
+  `node scripts/v2-smoke.mjs` then `node scripts/v2-smoke.mjs --live`.
+- The `--live` smoke check requires actual Bybit connectivity and can fail during provider outages.
 
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
