@@ -33,3 +33,28 @@ export function completedCandlesNewestFirst<T extends { timestamp: string }>(
     ? newestFirst.slice(1)
     : newestFirst;
 }
+
+/**
+ * The scheduler normally refreshes the four engine timeframes every 5m.
+ * A missing/stale series must never be used to authorize a fresh signal.
+ */
+export function assertRecentCompletedCandle<T extends { timestamp: string }>(
+  newestFirstCompleted: T[],
+  timeframe: string,
+  nowMs = Date.now()
+): void {
+  const interval = TIMEFRAME_MS[timeframe];
+  if (!interval) throw new Error(`Unsupported candle timeframe: ${timeframe}`);
+  if (newestFirstCompleted.length === 0) {
+    throw new Error(`No completed candles for ${timeframe}`);
+  }
+
+  const lastCloseMs = Date.parse(newestFirstCompleted[0].timestamp) + interval;
+  const toleratedLagMs = Math.max(8 * 60_000, 2 * interval);
+
+  if (!Number.isFinite(lastCloseMs) ||
+      lastCloseMs > nowMs ||
+      nowMs - lastCloseMs > toleratedLagMs) {
+    throw new Error(`Stale or invalid completed candle data for ${timeframe}`);
+  }
+}
