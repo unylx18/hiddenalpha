@@ -165,7 +165,35 @@ export function calculatePortfolioAnalytics(input: ManualPortfolio): PortfolioAn
 }
 
 /* Dedicated portfolio CSV format: import is all-or-nothing. No journal data is mutated. */
-import { parseCsvRows } from "./journal";
+/** Parse the small dedicated portfolio CSV with RFC4180 quoting and CRLF support. */
+function parsePortfolioCsvRows(csv: string): string[][] {
+  if (csv.length > 2_000_000) throw new Error("Portfolio CSV exceeds 2 MB.");
+  const rows: string[][] = [];
+  let row: string[] = [], field = "", quoted = false;
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (csv[i + 1] === '"') {field += '"'; i++;}
+        else quoted = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      if (field.length > 0) throw new Error("Invalid quote in unquoted field.");
+      quoted = true;
+    } else if (ch === ",") {
+      row.push(field); field = "";
+    } else if (ch === "\r" || ch === "\n") {
+      if (ch === "\r" && csv[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some(x=>x.length>0)) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  if (quoted) throw new Error("CSV contains an unclosed quoted value.");
+  row.push(field);
+  if (row.some(x=>x.length>0)) rows.push(row);
+  return rows;
+}
 function escapeCsv(value: string|number) {
   const text = String(value);
   const safe = /^[=+@\-\t\r\n]/.test(text) ? "'"+text : text;
@@ -179,7 +207,7 @@ export function exportHoldingsCsv(holdings: TrackedHolding[]): string {
   ].join("\r\n")+"\r\n";
 }
 export function importHoldingsCsv(text: string): TrackedHolding[] {
-  const rows = parseCsvRows(text.replace(/^\uFEFF/,""));
+  const rows = parsePortfolioCsvRows(text.replace(/^\uFEFF/,""));
   if (!rows.length || rows[0].length!==PORTFOLIO_CSV_COLUMNS.length ||
       PORTFOLIO_CSV_COLUMNS.some((column,index)=>rows[0][index]!==column)) {
     throw new Error("Portfolio CSV header must match the Hidden Alpha template.");
