@@ -126,7 +126,7 @@ export default function TradingTerminal() {
     setAnalysisState({key, loading: true, data: null, error: "", stale: false});
     try {
       const qs = new URLSearchParams({symbol, timeframe});
-      const result = await fetch("/api/trading/context?" + qs.toString(), {
+      const result = await fetch("/api/v2/analysis?" + qs.toString(), {
         cache: "no-store", signal: active.signal,
       });
       const payload: unknown = await result.json();
@@ -239,7 +239,7 @@ export default function TradingTerminal() {
                   <span className="rounded border border-[#225168] px-2 py-1 text-[10px] text-[#a2c4d3]">{timeframe}</span>
                 </div>
                 <div className="mt-4 rounded-lg border border-[#14566c] bg-[#062435] p-4">
-                  <div className="text-[10px] text-[#88abbc]">Alpha Engine · {symbol}</div>
+                  <div className="text-[10px] text-[#88abbc]">Stateless Alpha Engine · {symbol}</div>
                   <div className={"mt-2 text-[25px] font-extrabold " +
                     (currentBias === "BULLISH" ? "text-[#14dca4]" : currentBias === "BEARISH" ? "text-[#ff7182]" : "text-[#a2bbcc]")}>
                     {currentBias}
@@ -270,7 +270,7 @@ export default function TradingTerminal() {
                   </div>
                 </div> : <div className="mt-4 rounded-lg border border-dashed border-[#1a455a] p-4 text-[11px] leading-5 text-[#90b3c3]">
                   <Gauge size={18} className="mb-2 text-[#1bcaf5]"/>
-                  Fast chart first. Alpha Engine runs only when requested; engine failures do not block the chart.
+                  Fast chart first. Alpha Engine computes from independent closed Bybit candles in memory, only when requested.
                 </div>}
                 <p className="mt-4 text-[10px] leading-5 text-[#779daf]">
                   *Confidence is an internal score, not an accuracy guarantee. TradingView chart data is separate from Bybit engine calculations.
@@ -314,7 +314,7 @@ export default function TradingTerminal() {
               </section>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#123c51] pt-3 text-[10px] text-[#759cae]">
-              <div>TradingView hosts the chart. Hidden Alpha does not scrape its feed or write chart candles to Supabase.</div>
+              <div>TradingView hosts the chart. Alpha Engine fetches independent Bybit candles on request. Neither flow writes candles to Supabase.</div>
               <div className="flex flex-wrap gap-3">
                 <Link href="/tools" className="inline-flex items-center gap-1 text-[#1bcaf5]"><Wrench size={12}/> Existing tools</Link>
                 <Link href="/" className="inline-flex items-center gap-1 text-[#1bcaf5]"><ArrowUpRight size={12}/> Legacy dashboard</Link>
