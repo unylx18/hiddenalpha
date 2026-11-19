@@ -25,6 +25,7 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
     if (!crypto) return;
     let active = true;
     let lastSocketUpdate = 0;
+    let socketOpen = false;
     let fallback: ReturnType<typeof setInterval> | undefined;
     const controller = new AbortController();
 
@@ -49,7 +50,7 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         }
         if (!active) return;
         // A newer WebSocket update must not be overwritten by a slower REST response.
-        setState(previous => previous?.symbol === symbol && previous.value?.source === "WEBSOCKET"
+        setState(previous => previous?.symbol === symbol && previous.value?.source === "WEBSOCKET" && socketOpen
           ? previous
           : { symbol, value: { price, change24h: change, fetchedAt: new Date().toISOString(), source: "REST" }, error: "" });
       } catch (error) {
@@ -62,7 +63,9 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
 
     void fetchSnapshot();
 
-    const connection = createBybitTickerSocket(
+    let connection: ReturnType<typeof createBybitTickerSocket> | undefined;
+    try {
+      connection = createBybitTickerSocket(
       [symbol],
       ticker => {
         if (!active || ticker.symbol !== symbol ||
@@ -85,9 +88,11 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
       status => {
         if (!active) return;
         if (status === "OPEN") {
+          socketOpen = true;
           if (fallback) clearInterval(fallback);
           fallback = undefined;
         } else if ((status === "ERROR" || status === "CLOSED") && !fallback) {
+          socketOpen = false;
           // One read-only REST snapshot every 30 seconds only if the socket fails.
           void fetchSnapshot();
           fallback = setInterval(() => {
@@ -96,11 +101,18 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         }
       }
     );
+    } catch {
+      socketOpen = false;
+      // A blocked WebSocket must not prevent the REST quote from working.
+      fallback = setInterval(() => {
+        if (document.visibilityState === "visible") void fetchSnapshot();
+      }, 30_000);
+    }
 
     return () => {
       active = false;
       controller.abort();
-      connection.close();
+      connection?.close();
       if (fallback) clearInterval(fallback);
     };
   }, [crypto, symbol]);
