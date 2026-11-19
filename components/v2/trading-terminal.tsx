@@ -194,7 +194,7 @@ export default function TradingTerminal() {
                 (current ? "border-[#1baee0] bg-[#0b4562] text-white" :
                   "border-transparent text-[#91b0c0] hover:bg-[#123447]")}>
               <Icon size={17}/><span className="flex-1">{name}</span>
-              {!current && <span className="text-[8px] text-[#64899d]">OLD</span>}
+              {!current && !href.startsWith("/v2") && <span className="text-[8px] text-[#64899d]">OLD</span>}
             </Link>)}
           </nav>
           <div className="border-t border-[#15384d] p-4 text-[10px] leading-5 text-[#7295a8]">
@@ -323,9 +323,9 @@ export default function TradingTerminal() {
               </section>
               <section className={panel + " p-4"}>
                 <div className="flex items-center gap-2 text-[13px] font-bold"><BookOpen size={16} className="text-[#20c6ee]"/> Trading Journal</div>
-                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Awaiting trade sync</div>
-                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Journal requires real executions, fee and funding reconciliation; planned read-only import via broker or CSV.</p>
-                <Link href="/performance" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">Open existing journal (legacy) <ArrowUpRight size={12}/></Link>
+                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Local Journal Ready</div>
+                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Record closed trades manually or import the Hidden Alpha CSV template. Entries remain local to your browser; broker sync is not connected.</p>
+                <Link href="/v2/journal" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">Open V2 Trading Journal <ArrowUpRight size={12}/></Link>
               </section>
               <section className={panel + " p-4"}>
                 <div className="flex items-center justify-between text-[13px] font-bold"><span className="flex items-center gap-2"><Activity size={16} className="text-[#20c6ee]"/> Market Watchlist</span><span className="text-[9px] font-normal text-[#7798a9]">Symbols only</span></div>
