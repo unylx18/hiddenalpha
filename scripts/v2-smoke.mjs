@@ -1,0 +1,80 @@
+/**
+ * Hidden Alpha V2 smoke checks (Node 20+; no extra packages).
+ *
+ * Start the app with "npm run dev" or "npm run start", then:
+ *   node scripts/v2-smoke.mjs
+ *   node scripts/v2-smoke.mjs --live
+ *
+ * The default checks do NOT contact Bybit or modify any data.
+ * --live makes a read-only, real provider request; it may fail if Bybit is unavailable.
+ */
+import assert from "node:assert/strict";
+
+const live = process.argv.includes("--live");
+const base = (process.env.V2_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+let failures = 0;
+
+async function check(name, task) {
+  try {
+    await task();
+    console.log("PASS", name);
+  } catch (error) {
+    failures++;
+    console.error("FAIL", name, error instanceof Error ? error.message : error);
+  }
+}
+
+async function call(path) {
+  const response = await fetch(base + path, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(14_000),
+    cache: "no-store",
+  });
+  const body = await response.json();
+  return { response, body };
+}
+
+await check("V2 dashboard route exists", async () => {
+  const res = await fetch(base + "/v2", { signal: AbortSignal.timeout(8_000) });
+  assert.equal(res.status, 200, "GET /v2 returned " + res.status);
+  assert.match(await res.text(), /HIDDEN ALPHA|Hidden Alpha/i);
+});
+
+for (const [path, label] of [
+  ["/api/v2/analysis?symbol=INVALID&timeframe=15m", "invalid crypto symbol"],
+  ["/api/v2/analysis?symbol=XAUUSD&timeframe=15m", "unsupported forex analysis"],
+  ["/api/v2/analysis?symbol=BTCUSDT&timeframe=99m", "invalid timeframe"],
+]) {
+  await check("Validation rejects " + label, async () => {
+    const { response, body } = await call(path);
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  });
+}
+
+if (live) {
+  await check("Actual Bybit BTCUSDT analysis (read-only, no Supabase)", async () => {
+    const first = await call("/api/v2/analysis?symbol=BTCUSDT&timeframe=15m");
+    assert.equal(first.response.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body.success, true);
+    assert.equal(first.body.provider, "bybit");
+    assert.equal(first.body.architecture, "stateless-on-demand");
+    assert.ok(first.body.candleCount >= 200);
+    assert.ok(["BULLISH", "BEARISH", "NEUTRAL"].includes(first.body.alpha?.market?.bias));
+    assert.ok(Number.isFinite(first.body.alpha?.market?.score));
+    assert.ok(Number.isFinite(first.body.alpha?.market?.confidence));
+    assert.ok(!Number.isNaN(Date.parse(first.body.lastClosedAt)));
+
+    const second = await call("/api/v2/analysis?symbol=BTCUSDT&timeframe=15m");
+    assert.equal(second.response.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.success, true);
+    console.log("     Cache:", first.body.cache, "->", second.body.cache);
+    console.log("     Candle count:", first.body.candleCount, "last closed:", first.body.lastClosedAt);
+  });
+} else {
+  console.log("SKIP live provider test (use --live to enable)");
+}
+
+console.log(failures ? "\nV2 smoke FAILED: " + failures + " issue(s)." : "\nV2 smoke PASSED.");
+if (failures) process.exitCode = 1;
