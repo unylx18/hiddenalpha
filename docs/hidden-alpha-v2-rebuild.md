@@ -109,6 +109,34 @@ OANDA v20 docs:
 - Regression tests: Node 24+ can run \`node --test scripts/v2-risk.test.mjs\` using built-in TypeScript type stripping. Test LONG/SHORT sizing, broker lot rounding, missing contract size and bad input protection.
 - The general smoke suite now also confirms \`GET /v2/risk\` returns HTTP 200.
 
+## Phase 5 — Trading Journal (local beta)
+
+- Route: \`/v2/journal\` with a real link in the V2 sidebar and dashboard card.
+- Files: \`components/v2/trading-journal.tsx\`, \`lib/trading/v2/journal.ts\`, \`app/v2/journal/page.tsx\`.
+- Inputs: fully **closed** linear BTCUSDT/ETHUSDT/SOLUSDT/XAUUSD/EURUSD/GBPUSD trades,
+  with direction, quantity, entry, exit, total fee, open/close timestamps, optional initial risk and notes.
+- Quantity is **base-asset units** for crypto, **base currency units** for EURUSD/GBPUSD, and **troy ounces** for XAUUSD. No broker-specific lot conversion is performed in the journal.
+- Fee-adjusted net P&L: (exit − entry) × quantity × (+1 for LONG, −1 for SHORT) − recorded fees.
+  Crypto values are USDT and represented as USD-equivalent **without currency conversion**.
+- Analytics: closed trade count, win rate, gross profit/loss, profit factor, cumulative
+  realized P&L curve, maximum drawdown in quote currency on the **realized P&L curve**,
+  fees, and average R only when initial risk is present. No fictional data is preloaded.
+- Browser \`localStorage\` only. **Not encrypted, not synced, not tied to an authenticated
+  account, not backed up.** Avoid shared devices; export CSV backups. No Supabase writes.
+- Import/export uses strict Hidden Alpha CSV header
+  \`id,symbol,direction,quantity,entry,exit,feesUsd,openedAt,closedAt,riskUsd,notes\`.
+  Import rejects invalid rows atomically and skips existing IDs rather than replacing
+  them. Export escapes CSV quotes and guards spreadsheet formula-starting cells.
+- Current beta model excludes partial fills, multiple-entry legs, deposits, withdrawals,
+  liquidations, swap/funding, conversions and open position unrealized P&L.
+  These must be modeled before claiming true broker performance.
+- Check: \`node --test scripts/v2-journal.test.mjs\` (8 cases) and
+  \`node scripts/v2-smoke.mjs\` (now covers the journal route).
+- Before public Production: user-scoped authenticated persistence with RLS,
+  proper trade ledger reconciliation and secure broker/CSV import adaptors.
+  Do NOT copy localStorage entries into Supabase without explicit opt-in and
+  ownership validation.
+
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
 - Do not expose any service-role or broker secret in public client components.
