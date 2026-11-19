@@ -9,9 +9,7 @@ TradingView's attribution remains visible. Review TradingView widget/brand terms
 Hidden Alpha's own **read-only Bybit** ticker endpoint powers selected Crypto price.
 V2 has a **stateless on-demand Alpha endpoint**, `GET /api/v2/analysis`, which pulls the most recent completed candles directly from Bybit. It reuses the existing pure EMA/RSI/ATR, volume, market structure and Alpha Score calculations in memory, with NO Supabase candle read/write. It is independent of the TradingView chart. The old database-backed `GET /api/trading/context` remains available only for legacy workflows until migration.
 
-Forex / XAUUSD: the TradingView OANDA chart is supported for chart-only visualization.
-There is currently no validated Forex Alpha Engine or brokerage quote sync.
-Do not display a derived forex signal until a provider adapter and instrument normalization are complete.
+Forex / XAUUSD: TradingView OANDA chart is independent of the on-demand Forex Alpha Engine. The new read-only OANDA v20 adapter supports XAUUSD, EURUSD and GBPUSD with server-side credentials. The UI displays an unavailable state until those are configured. There is still **no broker execution or live Forex bid/ask quote sync**. An Alpha Engine market bias is NOT an executable trade signal.
 
 ## Current V2 components
 - `app/v2/page.tsx` — isolated V2 page. Existing `/` still serves the legacy dashboard.
@@ -20,6 +18,9 @@ Do not display a derived forex signal until a provider adapter and instrument no
 - `components/v2/live-market-quote.tsx` — read-only Bybit REST initial quote + one WebSocket stream for the selected Crypto, falling back to a single REST poll every 30 seconds if the socket fails.
 - `components/v2/instruments.ts` — **static symbol metadata only**; no demo prices, P&L, or bias.
 - `components/v2/brand.tsx` — interim vector mark; replace only when the exact approved logo file is available.
+- `lib/trading/v2/stateless-analysis.ts` — shared pure analysis module for Crypto and Forex, using existing EMA/RSI/ATR/structure/score functions.
+- `lib/market-data/oanda-candles.ts` — read-only authenticated OANDA v20 candles, hardcoded to three Forex instruments and supported timeframes.
+- `app/api/v2/forex/analysis/route.ts` — on-demand Forex analysis, with brief per-instance cache and duplicate-request deduplication. Returns 503 until a provider is configured.
 - `app/api/v2/analysis/route.ts` — public-market-data, read-only Bybit calculations without DB. Only three Crypto symbols and seven timeframes are accepted; no order execution. It rejects missing/stale/gapped closed candles, limits upstream fetch to 8 seconds, coalesces concurrent requests and caches results briefly per server instance (10–30 seconds).
 - `scripts/v2-smoke.mjs` — dependency-free local route validation, with optional read-only live Bybit analysis checks.
 
@@ -37,8 +38,8 @@ Removed as unused V2-only code:
    computes the engine context in memory. It validates candle count and freshness, and returns an
    error instead of a guessed signal if Bybit is unavailable or stale. Its failure is isolated
    from the TradingView chart.
-4. Forex chart works through TradingView; its own Alpha Engine and live quote are deliberately
-   marked unsupported until a validated forex provider is implemented.
+4. Forex chart works through TradingView; the **separate OANDA Forex Alpha Engine** works only after its server-side token/account configuration is present. The chart remains usable if OANDA is missing. **No executable Forex quote** is shown.
+   OANDA `volume` is **number of price updates**, not globally traded volume. The relative activity component in the inherited Alpha Score must be interpreted with that limitation.
 5. Chart provider data, Alpha Engine computed context, and portfolio/journal sync are **three
    different sources**. Never mix them or imply the TradingView chart predicts signals.
 6. Alpha context older than three selected candle periods (minimum 15 minutes) shows
@@ -66,7 +67,36 @@ history if it is needed for auditable backtests/signals, but it must not block U
 - In-memory caching is per serverless instance, not distributed rate limiting. Add distributed API quotas/security policy before public production usage.
 - Verify with two CMD sessions: run `npm run dev` in one; in the other run
   `node scripts/v2-smoke.mjs` then `node scripts/v2-smoke.mjs --live`.
+- After setting OANDA credentials, run `node scripts/v2-smoke.mjs --forex`. This makes a read-only OANDA request.
 - The `--live` smoke check requires actual Bybit connectivity and can fail during provider outages.
+
+## Optional Forex provider setup (local development)
+
+Use a supported OANDA v20 practice account. Never send its token in chat or commit it.
+Add the following **variable names** with your own values to local `.env.local`:
+
+```dotenv
+OANDA_API_TOKEN=your-personal-practice-token
+OANDA_ACCOUNT_ID=your-practice-account-id
+OANDA_ENV=practice
+```
+
+Only the server reads these values; never prefix them with `NEXT_PUBLIC_`.
+Restart the local Next.js server after editing `.env.local`.
+Forex analysis without these settings intentionally returns **HTTP 503**.
+Use `node scripts/v2-smoke.mjs --forex` to verify validation or live availability.
+
+Supported analysis timeframes: **1m, 3m, 5m, 15m, 1h, 4h, 1d**.
+OANDA's current public granularity table does not show native M3; for 3m
+the adapter aggregates **three consecutive completed M1 candles**.
+Incomplete 3m groups are discarded rather than inferred.
+The OANDA market closes over weekends, so the engine can return NO TRADE
+when candles are stale. Forex price-update count is not spot FX trade volume.
+The TradingView chart and OANDA analysis may have different intrabar values/feeds.
+
+OANDA v20 docs:
+- https://developer.oanda.com/rest-live-v20/pricing-ep/
+- https://developer.oanda.com/rest-live-v20/instrument-df/
 
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
