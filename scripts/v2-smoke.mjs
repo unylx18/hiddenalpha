@@ -35,6 +35,12 @@ async function call(path) {
   return { response, body };
 }
 
+await check("V2 portfolio analytics route exists", async () => {
+  const res = await fetch(base + "/v2/portfolio", { signal: AbortSignal.timeout(8_000) });
+  assert.equal(res.status, 200, "GET /v2/portfolio returned " + res.status);
+  assert.match(await res.text(), /Portfolio Analytics/i);
+});
+
 await check("V2 trading journal route exists", async () => {
   const res = await fetch(base + "/v2/journal", { signal: AbortSignal.timeout(8_000) });
   assert.equal(res.status, 200, "GET /v2/journal returned " + res.status);
