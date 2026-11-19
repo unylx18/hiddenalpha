@@ -98,6 +98,17 @@ OANDA v20 docs:
 - https://developer.oanda.com/rest-live-v20/pricing-ep/
 - https://developer.oanda.com/rest-live-v20/instrument-df/
 
+## V2 Risk Manager — independent of OANDA (Phase 4)
+- URL: \`/v2/risk\` (linked from V2 terminal sidebar).
+- \`lib/trading/v2/position-sizing.ts\` contains pure client-side risk sizing; it does NOT send orders or persist positions, transactions, or personal financial inputs.
+- \`components/v2/risk-calculator.tsx\` provides manual USD-equivalent account equity, long/short, entry/stop/optional target, percent risk, and fee/slippage estimates in bps.
+- Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, XAUUSD, EURUSD, GBPUSD. These are all USD/USDT-quoted linear instruments for **illustrative estimation**; inverse contracts or non-USD account currencies require a separate conversion model.
+- Crypto position sizes use a user-provided *quantity increment*. Forex sizes require the user's actual broker-specific contract units per lot and lot increment. **No assumed gold contract size**. Always round **down**, never exceed planned risk budget from rounding.
+- Maximum modeled per-trade risk is 5% of account equity. Fees and adverse slippage are included in modeled stop-loss risk and net take-profit. This does **not** guarantee fill price or account liquidation protection.
+- No broker/margin integration yet. Users must check contract specification, margin, spreads, swap/funding, liquidation rules and min/max orders before trading.
+- Regression tests: Node 24+ can run \`node --test scripts/v2-risk.test.mjs\` using built-in TypeScript type stripping. Test LONG/SHORT sizing, broker lot rounding, missing contract size and bad input protection.
+- The general smoke suite now also confirms \`GET /v2/risk\` returns HTTP 200.
+
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
 - Do not expose any service-role or broker secret in public client components.
