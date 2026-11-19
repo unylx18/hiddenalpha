@@ -137,6 +137,40 @@ OANDA v20 docs:
   Do NOT copy localStorage entries into Supabase without explicit opt-in and
   ownership validation.
 
+## Phase 6 — Portfolio Analytics (manual long-only beta)
+
+- Route: \`/v2/portfolio\`, linked from the V2 terminal sidebar and the Portfolio card.
+- Files: \`lib/trading/v2/portfolio.ts\`, \`components/v2/portfolio-analytics.tsx\`,
+  \`app/v2/portfolio/page.tsx\`, \`scripts/v2-portfolio.test.mjs\`.
+- Separate from Trading Journal. **Closed trades do not create or settle open holdings**,
+  and realized P&L is NOT added to marked portfolio value. The user tracks positions
+  and cash manually, avoiding invented balances or double-counted performance.
+- Supports LONG, spot-like BTC/ETH/SOL quantities, EUR/GBP currency units and XAU
+  troy ounces; explicitly does NOT calculate derivatives/futures, short positions,
+  broker margin, swaps or inverse contract exposure.
+- Portfolio figures: marked holdings value, manual cash, total tracked marked value,
+  cost basis, unrealized P&L and return on cost, individual allocation and combined
+  instrument allocation; trading journal realized totals display separately.
+- Every holding requires quantity, average USD unit cost and **user-entered USD
+  mark per unit** with a saved timestamp. These are NOT broker quotes or TradingView
+  feed values. USDT is displayed as USD-equivalent without FX conversion.
+- Local-only browser \`localStorage\` with distinct key
+  \`hiddenalpha:v2:portfolio:manual-v1\`; browser scripts can access it, it
+  is not encrypted, and clearing site data removes it. No Supabase writes.
+- JSON backup/restore includes cash and all holdings. Restore requires confirmation
+  before replacing the saved local portfolio. CSV import/export covers holdings only,
+  does not include cash, validates all input before writing, skips existing IDs.
+- Validated pure calculator prevents negative cash, nonfinite numbers, duplicate IDs,
+  unsupported instruments, future mark dates and overly large balances. No fabricated
+  position/price data is inserted.
+- Unit tests: \`node --test scripts/v2-portfolio.test.mjs\` (9 tests)
+  and browser route smoke \`node scripts/v2-smoke.mjs\`.
+- Full account net worth / equity return / portfolio drawdown **cannot be inferred**
+  without a reconciled transaction ledger including deposits, withdrawals,
+  funding, borrowings, fees and broker account balances.
+- Do not promote local storage to a cloud record without authenticated user isolation,
+  row-level security, encryption and an explicit migration/backup plan.
+
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
 - Do not expose any service-role or broker secret in public client components.
