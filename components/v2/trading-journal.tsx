@@ -58,8 +58,8 @@ type FormData = {
 const blankForm = (): FormData => ({
   symbol: "BTCUSDT", direction: "LONG",
   quantity: "", entry: "", exit: "", feesUsd: "0", riskUsd: "",
-  openedAt: dateInputValue(new Date(Date.now() - 3_600_000)),
-  closedAt: dateInputValue(), notes: "",
+  // Keep server/client first render stable; user enters actual execution timestamps.
+  openedAt: "", closedAt: "", notes: "",
 });
 
 function Field({ name, value, update, kind = "text", hint, placeholder }: {
@@ -277,6 +277,8 @@ export default function V2TradingJournal() {
               <Field name="Initial risk USD (optional)" value={form.riskUsd} update={v=>update("riskUsd",v)} hint="For average R calculation; not estimated automatically"/>
               <Field name="Opened at" kind="datetime-local" value={form.openedAt} update={v=>update("openedAt",v)}/>
               <Field name="Closed at" kind="datetime-local" value={form.closedAt} update={v=>update("closedAt",v)}/>
+              <button type="button" onClick={()=>update("closedAt", dateInputValue())}
+                className="self-end rounded border border-[#225468] px-3 py-2 text-[11px] text-[#afcedd] hover:bg-[#12384c]">Set close time to now</button>
             </div>
             <label className="flex flex-col gap-1.5"><span className="text-[11px] font-semibold text-[#b6d2e0]">Trade notes (optional, up to 500 characters)</span>
               <textarea rows={3} maxLength={500} value={form.notes} onChange={e=>update("notes",e.target.value)}
