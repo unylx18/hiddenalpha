@@ -35,6 +35,12 @@ async function call(path) {
   return { response, body };
 }
 
+await check("V2 risk manager route exists", async () => {
+  const res = await fetch(base + "/v2/risk", { signal: AbortSignal.timeout(8_000) });
+  assert.equal(res.status, 200, "GET /v2/risk returned " + res.status);
+  assert.match(await res.text(), /Risk Manager/i);
+});
+
 await check("V2 dashboard route exists", async () => {
   const res = await fetch(base + "/v2", { signal: AbortSignal.timeout(8_000) });
   assert.equal(res.status, 200, "GET /v2 returned " + res.status);
