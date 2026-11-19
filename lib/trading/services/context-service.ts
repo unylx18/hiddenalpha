@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { completedCandlesNewestFirst } from "@/lib/market-data/closed-candles";
 import { calculateMarketIndicators } from "@/lib/trading/services/indicator-service";
 import { calculateMarketRegime } from "@/lib/trading/regime/calculator";
 import { calculateVolumeAnalysis } from "@/lib/trading/volume/calculator";
@@ -120,8 +121,7 @@ export async function getMarketContext(
   }
 
   const completedVolumeCandles =
-    volumeCandles
-      .slice(1)
+    completedCandlesNewestFirst(volumeCandles, timeframe)
       .sort(
         (a, b) =>
           new Date(
@@ -188,8 +188,7 @@ export async function getMarketContext(
   }
 
   const completedStructureCandles =
-    structureCandles
-      .slice(1)
+    completedCandlesNewestFirst(structureCandles, timeframe)
       .map(
         (candle) => ({
           timestamp:

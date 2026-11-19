@@ -1,0 +1,46 @@
+name: HiddenAlpha CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:smoke
+      - run: npx tsc --noEmit
+      - name: Lint changed security and data files (required)
+        run: |
+          npx eslint \
+            lib/security/authorize-mutation.ts \
+            lib/market-data/closed-candles.ts \
+            lib/trading/services/indicator-service.ts \
+            lib/trading/services/context-service.ts \
+            lib/trading/risk/calculator.ts \
+            components/market-auto-sync.tsx \
+            app/api/market/sync/route.ts \
+            app/api/trading/pipeline/route.ts \
+            app/api/trading/publisher/route.ts \
+            app/api/trading/signals/save/route.ts \
+            app/api/trading/signals/lifecycle/route.ts \
+            app/api/trading/signals/monitor/route.ts \
+            app/api/trading/signals/status/route.ts
+      - name: Whole-repo legacy lint (advisory; pre-existing debt)
+        continue-on-error: true
+        run: npm run lint
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-public-anon-key

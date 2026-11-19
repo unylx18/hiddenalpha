@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { completedCandlesNewestFirst, assertRecentCompletedCandle } from "@/lib/market-data/closed-candles";
 
 import {
   calculateEMA,
@@ -148,8 +149,7 @@ export async function calculateMarketIndicators(
    */
 
   const completedCandles =
-    candles
-      .slice(1)
+    completedCandlesNewestFirst(candles, timeframe)
       .map((candle) => ({
         timestamp:
           candle.timestamp,
@@ -197,6 +197,9 @@ export async function calculateMarketIndicators(
       `Not enough completed candle data for ${symbol} ${timeframe}`
     );
   }
+
+  // New signals must never use stale database candles.
+  assertRecentCompletedCandle([...completedCandles].reverse(), timeframe);
 
   /*
    * ========================================

@@ -1,6 +1,9 @@
+import { authorizeMutation } from "@/lib/security/authorize-mutation";
 import { syncBybitMarkets } from "@/lib/market-data/jobs/sync-bybit";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = await authorizeMutation(request);
+  if (denied) return denied;
   try {
     const results = await syncBybitMarkets();
 
