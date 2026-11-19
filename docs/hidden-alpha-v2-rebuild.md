@@ -1,36 +1,75 @@
-# Hidden Alpha V2 — Rebuild Plan
+# Hidden Alpha V2 — lightweight trading terminal rebuild
 
-## Goal
-Rebuild the Hidden Alpha user experience around the selected dark-navy/electric-cyan dashboard reference, while preserving the existing trading engine, market data, signal lifecycle, Supabase data and security controls.
+## Architecture decision (2026-11-19)
+V2 uses an official, hosted TradingView Advanced Chart widget for visual charts.
+The TradingView widget supplies its own chart candles and chart interaction.
+**We do not scrape TradingView, read its iframe data, or copy its candles into our DB.**
+TradingView's attribution remains visible. Review TradingView widget/brand terms before commercial release.
 
-## Current implementation (branch: feat/hiddenalpha-v2-visual-terminal)
-- `app/v2/page.tsx` is the isolated V2 page; current production `/` is unchanged.
-- `components/v2/trading-terminal.tsx` holds the V2 interactive workspace.
-- `components/v2/instruments.ts` holds **illustrative** instruments, UI-only market metadata and formatting.
-- `components/v2/candlestick-chart.tsx` renders **synthetic** candlesticks for layout testing, not prices from a provider.
-- `components/v2/brand.tsx` holds an **interim vector mark**; replace it with the exact approved brand asset once the image file is committed.
-- `components/v2/mini-stat.tsx` contains a reusable market metric card.
-- `components/v2/live-crypto-context.tsx` requests existing `GET /api/trading/context` on demand for **crypto only**. It displays the API payload independently from the demo cards, does not place orders, and does not automatically poll.
-- All trade performance, portfolio, prices, ticker changes, market brief and chart graphics in the rest of the V2 prototype remain **synthetic**. A successful API call does not make those cards live.
+Hidden Alpha's own **read-only Bybit** ticker endpoint powers selected Crypto price.
+Hidden Alpha's **existing Alpha Context API**, called manually by the user, powers Crypto bias,
+trend, momentum, volatility, relative volume, and engine score. The Alpha Context API is
+separate from TradingView and can fail without blocking the chart.
 
-## Data/UX requirements
-1. Never present synthetic chart or P&L as a live feed.
-2. Live crypto market context is a read-only calculated bias. A confidence score is not a guaranteed probability of market direction.
-3. Format and freshness of any live candle must be validated before live chart integration, including current versus completed candles and symbol/timeframe matching.
-4. Forex (XAUUSD and currency pairs) requires a separate vetted market data provider, a pricing and symbol normalization layer, and instrument-specific risk calculations. Do not send forex symbols to the Bybit perpetual endpoint.
-5. Support WAIT/NEUTRAL, stale/unavailable, unsupported timeframe, API failure and NO TRADE states without fabricating data.
-6. Live P&L and trading journal require authenticated user-scoped data with RLS, fee accounting, deduplication, and read-only import permissions.
+Forex / XAUUSD: the TradingView OANDA chart is supported for chart-only visualization.
+There is currently no validated Forex Alpha Engine or brokerage quote sync.
+Do not display a derived forex signal until a provider adapter and instrument normalization are complete.
 
-## Release gates
-- Resolve and verify existing security-hardening PR #1 separately, including cron and trading mutation authorization.
-- Migrate old UI pages one-by-one. Delete old components only after their dependencies and parity are verified.
-- Verify `npm run lint`, `npx tsc --noEmit`, and `npm run build`, plus affected runtime routes. Existing lint debt remains and must be addressed before release, not hidden by disabling rules.
-- Check the exact official Hidden Alpha logo asset; do not treat the interim vector as the official logo.
-- Review V2 on desktop and mobile; compare against the approved reference.
-- Keep PR #2 draft and do not merge to `main`, alter schema/user data, or deploy production before all gates pass.
+## Current V2 components
+- \`app/v2/page.tsx\` — isolated V2 page. Existing \`/\` still serves the legacy dashboard.
+- \`components/v2/trading-terminal.tsx\` — redesigned V2 workspace with user-triggered analysis.
+- \`components/v2/tradingview-chart.tsx\` — official TradingView widget and visible attribution.
+- \`components/v2/live-market-quote.tsx\` — read-only Bybit quote for selected Crypto.
+- \`components/v2/instruments.ts\` — **static symbol metadata only**; no demo prices, P&L, or bias.
+- \`components/v2/brand.tsx\` — interim vector mark; replace only when the exact approved logo file is available.
 
-## Manual Windows CMD validation
-```bat
+Removed as unused V2-only code:
+- \`components/v2/candlestick-chart.tsx\` (custom candle chart).
+- \`app/api/v2/market/candles/route.ts\` (redundant read-only V2 candle proxy).
+- \`components/v2/live-crypto-context.tsx\` (duplicated separate context panel).
+- \`components/v2/mini-stat.tsx\` (demo-era market metrics).
+
+## User-visible behavior
+1. V2 chart opens without waiting for any database candle sync, scanner, engine health, or journal calls.
+2. The selected Crypto quote comes from \`GET /api/market/ticker?symbol=...\`.
+3. \`Analyze with Alpha Engine\` calls \`GET /api/trading/context?symbol=...&timeframe=...\`
+   once per click; no forced startup polling. This endpoint still requires the **existing
+   database-backed analysis pipeline**, so it may return an error when that pipeline or DB
+   is unavailable. Its failure is isolated from the TradingView chart.
+4. Forex chart works through TradingView; its own Alpha Engine and live quote are deliberately
+   marked unsupported until a validated forex provider is implemented.
+5. Chart provider data, Alpha Engine computed context, and portfolio/journal sync are **three
+   different sources**. Never mix them or imply the TradingView chart predicts signals.
+6. Alpha context older than three selected candle periods (minimum 15 minutes) shows
+   \`NO TRADE\` rather than claiming actionable context.
+7. Portfolio and journal show \`Not connected\` rather than made-up values.
+
+## Background sync / legacy migration
+\`components/hiddenalpha-shell.tsx\` mounts \`components/market-auto-sync.tsx\`
+on **legacy** routes. That old component still triggers up to 12 candle sync jobs
+(3 symbols × 4 timeframes) on startup and periodically. It is **NOT mounted** at
+\`/v2\`. Do not delete the shared ingest/market APIs while existing legacy pages
+and server-side signal jobs still depend on them.
+
+Future work: migrate the old market/scanner pages to lightweight adapters; only
+then remove browser startup sync and redundant historical candle storage. Keep
+history if it is needed for auditable backtests/signals, but it must not block UI rendering.
+
+## Security / release gates
+- Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
+- Do not expose any service-role or broker secret in public client components.
+- Preserve Supabase tables, customer accounts, orders and journal history.
+- Do not deploy production or delete backend candle pipelines until equivalent
+  signal/backtest behavior is proven with tests.
+- Run \`npx tsc --noEmit\`, \`npm run build\`, and \`npm run lint\`, plus browser acceptance tests.
+- Existing ESLint errors in legacy modules still need cleanup or safe removal *after* migration.
+- A prior Vercel Preview build could compile and TypeScript-check but failed prerendering
+  \`/auth\` because the Preview Supabase URL/key were not supplied. Local build with
+  the user's \`.env.local\` succeeded; do not use that as proof of Production readiness.
+- Verify official uploaded logo asset before replacing the interim vector.
+
+## Windows CMD: pull and test
+\`\`\`bat
 cd /d C:\Users\USER\Desktop\hiddenalpha
 git status -sb
 git fetch origin
@@ -38,7 +77,17 @@ git pull --ff-only origin feat/hiddenalpha-v2-visual-terminal
 npx tsc --noEmit
 npm run build
 npm run dev
-```
-Open `http://localhost:3000/v2`. The page and chart are demo-only by default. Choose a Crypto symbol then click **Load Live Crypto Context** to test the read-only engine; the rest of the dashboard is still illustrative.
+\`\`\`
+Open \`http://localhost:3000/v2\`. If the development server is already running,
+stop it with Ctrl+C before running \`npm run build\`, then restart \`npm run dev\`.
+Do not discard the pre-existing local \`.gitignore\` modification.
 
-Do not reset, stash or overwrite existing local changes (especially `.gitignore`) without reviewing them first.
+### Acceptance checks
+- Crypto BTCUSDT, ETHUSDT, SOLUSDT: TradingView chart displays without a 12-job sync.
+- Forex XAUUSD, EURUSD, GBPUSD: TradingView charts display, but engine is disabled.
+- Change 1m → 15m → 1h; chart updates and engine uses the matching timeframe.
+- Click Analyze: see genuine context or a clear error, not a fabricated bullish score.
+- In browser network panel, \`/v2\` does not call \`POST /api/market/sync\`.
+- Simulate a Supabase outage; chart remains available.
+- Check desktop/mobile layout, TradingView footer attribution, symbol mapping, provider
+  access/data delays and any browser CSP/ad-blocking effects.
