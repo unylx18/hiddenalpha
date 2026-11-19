@@ -269,12 +269,14 @@ export default function V2Portfolio() {
             <h2 className="mb-3 text-[14px] font-bold">Backup & import</h2>
             <p className="mb-3 text-[10px] leading-5 text-[#8cadbc]">JSON backup includes cash and all holdings. Holdings CSV includes holdings only—not your cash balance. Imports are validated before saving.</p>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={()=>triggerFileDownload("hiddenalpha-v2-portfolio-backup.json",JSON.stringify(parsed.portfolio,null,2),"application/json")}
-                className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px]"><Download size={13}/> Backup JSON</button>
+              <button type="button" disabled={Boolean(parsed.error)} onClick={()=>triggerFileDownload("hiddenalpha-v2-portfolio-backup.json",JSON.stringify(parsed.portfolio,null,2),"application/json")}
+                className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px] disabled:opacity-40"><Download size={13}/> Backup JSON</button>
+              {parsed.error && <button type="button" onClick={()=>triggerFileDownload("hiddenalpha-v2-portfolio-unparsed.txt",raw,"text/plain;charset=utf-8")}
+                className="inline-flex items-center gap-1.5 rounded border border-[#9b5860] px-3 py-2 text-[11px] text-[#ffb6c4]"><Download size={13}/> Export raw data for recovery</button>}
               <button type="button" disabled={Boolean(parsed.error)} onClick={()=>backupInputRef.current?.click()}
                 className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px] disabled:opacity-40"><FileUp size={13}/> Restore JSON</button>
-              <button type="button" onClick={()=>triggerFileDownload("hiddenalpha-v2-holdings.csv",exportHoldingsCsv(parsed.portfolio.holdings),"text/csv;charset=utf-8")}
-                className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px]"><Download size={13}/> Export CSV</button>
+              <button type="button" disabled={Boolean(parsed.error)} onClick={()=>triggerFileDownload("hiddenalpha-v2-holdings.csv",exportHoldingsCsv(parsed.portfolio.holdings),"text/csv;charset=utf-8")}
+                className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px] disabled:opacity-40"><Download size={13}/> Export CSV</button>
               <button type="button" disabled={Boolean(parsed.error)} onClick={()=>csvInputRef.current?.click()}
                 className="inline-flex items-center gap-1.5 rounded border border-[#226480] px-3 py-2 text-[11px] disabled:opacity-40"><FileUp size={13}/> Import CSV</button>
             </div>
