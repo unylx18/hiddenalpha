@@ -4,6 +4,7 @@
  * Start the app with "npm run dev" or "npm run start", then:
  *   node scripts/v2-smoke.mjs
  *   node scripts/v2-smoke.mjs --live
+ *   node scripts/v2-smoke.mjs --forex
  *
  * The default checks do NOT contact Bybit or modify any data.
  * --live makes a read-only, real provider request; it may fail if Bybit is unavailable.
@@ -44,6 +45,8 @@ for (const [path, label] of [
   ["/api/v2/analysis?symbol=INVALID&timeframe=15m", "invalid crypto symbol"],
   ["/api/v2/analysis?symbol=XAUUSD&timeframe=15m", "unsupported forex analysis"],
   ["/api/v2/analysis?symbol=BTCUSDT&timeframe=99m", "invalid timeframe"],
+  ["/api/v2/forex/analysis?symbol=BTCUSDT&timeframe=15m", "non-Forex symbol at Forex endpoint"],
+  ["/api/v2/forex/analysis?symbol=XAUUSD&timeframe=99m", "invalid Forex timeframe"],
 ]) {
   await check("Validation rejects " + label, async () => {
     const { response, body } = await call(path);
@@ -74,6 +77,26 @@ if (live) {
   });
 } else {
   console.log("SKIP live provider test (use --live to enable)");
+}
+
+const forex = process.argv.includes("--forex");
+if (forex) {
+  await check("Forex adapter status / actual provider (read-only)", async () => {
+    const { response, body } = await call("/api/v2/forex/analysis?symbol=XAUUSD&timeframe=15m");
+    if (response.status === 503 && /needs an OANDA v20 connection/.test(String(body.error))) {
+      console.log("     OANDA credentials not configured: connector correctly disabled (HTTP 503)");
+      return;
+    }
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.provider, "oanda");
+    assert.equal(body.marketType, "forex");
+    assert.equal(body.volumeKind, "price_updates");
+    assert.ok(body.candleCount >= 200);
+    assert.ok(["BULLISH","BEARISH","NEUTRAL"].includes(body.alpha?.market?.bias));
+    console.log("     OANDA analysis OK, candles:", body.candleCount, "last:", body.lastClosedAt);
+  });
+} else {
+  console.log("SKIP Forex connector test (use --forex to check configured OANDA endpoint)");
 }
 
 console.log(failures ? "\nV2 smoke FAILED: " + failures + " issue(s)." : "\nV2 smoke PASSED.");
