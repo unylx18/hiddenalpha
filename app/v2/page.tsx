@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   Activity, ArrowUpRight, BarChart3, Bell, BookOpen, ChevronDown, FlaskConical,
-  Home, Layers, PlugZap, Search, Settings2, ShieldCheck, SlidersHorizontal,
-  Target, TrendingUp, Wallet, Wrench, Zap
+  Home, PlugZap, Search, Settings2, ShieldCheck, SlidersHorizontal,
+  Wallet, Wrench, Zap
 } from "lucide-react";
 
 type Market = "crypto" | "forex";
