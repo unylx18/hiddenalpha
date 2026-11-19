@@ -105,6 +105,24 @@ export default function TradingTerminal() {
 
   useEffect(() => () => controller.current?.abort(), []);
 
+  useEffect(() => {
+    if (!analysisState?.data || analysisState.stale) return;
+    const duration = frameDuration[analysisState.data.timeframe] ?? 900_000;
+    const openedAt = Date.parse(analysisState.data.timestamp);
+    const cutoff = openedAt + duration + Math.max(duration * 2, 120_000);
+    const delay = Number.isFinite(cutoff) ? Math.max(0, cutoff - Date.now() + 25) : 0;
+    const timer = window.setTimeout(() => {
+      setAnalysisState((previous) =>
+        previous?.key === analysisState.key && previous.data === analysisState.data
+          ? { ...previous, stale: true }
+          : previous
+      );
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [analysisState]);
+
+
+
   function selectSymbol(id: SymbolKey) {
     controller.current?.abort();
     setSymbol(id);
@@ -140,8 +158,9 @@ export default function TradingTerminal() {
         throw new Error("Context response mismatch");
       }
       const sampledAt = Date.parse(data.timestamp);
-      const stale = !Number.isFinite(sampledAt) ||
-        Date.now() - sampledAt > Math.max(15 * 60_000, (frameDuration[timeframe] ?? 900_000) * 3);
+      const duration = frameDuration[timeframe] ?? 900_000;
+      const expiresAt = sampledAt + duration + Math.max(duration * 2, 120_000);
+      const stale = !Number.isFinite(sampledAt) || Date.now() >= expiresAt;
       if (!active.signal.aborted) setAnalysisState({key, loading: false, data, error: "", stale});
     } catch (error) {
       if (!active.signal.aborted) setAnalysisState({
