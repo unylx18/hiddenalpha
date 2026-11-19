@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowLeft, BookOpen, Download, FileUp, Pencil, Plus, ShieldAlert,
-  Trash2, TrendingDown, TrendingUp, X, Info,
+  Trash2, TrendingUp, X, Info,
 } from "lucide-react";
 import { Mark, AssetBadge } from "./brand";
 import { instruments, order, type SymbolKey } from "./instruments";
