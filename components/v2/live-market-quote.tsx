@@ -20,11 +20,13 @@ type QuoteState = {
 export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
   const crypto = symbol === "BTCUSDT" || symbol === "ETHUSDT" || symbol === "SOLUSDT";
   const [state, setState] = useState<QuoteState | null>(null);
+  const [now,setNow] = useState(0);
 
   useEffect(() => {
     if (!crypto) return;
     let active = true;
     let lastSocketUpdate = 0;
+    let socketOpenedAt = 0;
     let socketOpen = false;
     let fallback: ReturnType<typeof setInterval> | undefined;
     const controller = new AbortController();
@@ -49,6 +51,7 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
           throw new Error("Invalid Bybit market quote");
         }
         if (!active) return;
+        setNow(Date.now());
         // A newer WebSocket update must not be overwritten by a slower REST response.
         setState(previous => previous?.symbol === symbol && previous.value?.source === "WEBSOCKET" && socketOpen
           ? previous
@@ -74,6 +77,8 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         const now = Date.now();
         if (now - lastSocketUpdate < 1_000) return;
         lastSocketUpdate = now;
+        setNow(now);
+        if (fallback) { clearInterval(fallback); fallback=undefined; }
         setState(previous => ({
           symbol,
           value: {
@@ -91,6 +96,7 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         if (!active) return;
         if (status === "OPEN") {
           socketOpen = true;
+          socketOpenedAt = Date.now();
           if (fallback) clearInterval(fallback);
           fallback = undefined;
         } else if ((status === "ERROR" || status === "CLOSED") && !fallback) {
@@ -111,10 +117,26 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
       }, 30_000);
     }
 
+    // A socket can be OPEN yet silent. When no updates arrive for 45 seconds,
+    // use bounded REST fallback instead of keeping a permanently "live" badge.
+    const watchdog=window.setInterval(()=>{
+      const instant=Date.now();
+      setNow(instant);
+      if(!active || document.visibilityState!=="visible")return;
+      const last=lastSocketUpdate||socketOpenedAt;
+      if(socketOpen && last>0 && instant-last>45_000 && !fallback){
+        void fetchSnapshot();
+        fallback=setInterval(()=>{
+          if(document.visibilityState==="visible")void fetchSnapshot();
+        },30_000);
+      }
+    },15_000);
+
     return () => {
       active = false;
       controller.abort();
       connection?.close();
+      window.clearInterval(watchdog);
       if (fallback) clearInterval(fallback);
     };
   }, [crypto, symbol]);
@@ -137,13 +159,15 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
   }
 
   const q = state.value;
+  const fetched=Date.parse(q.fetchedAt);
+  const fresh=Number.isFinite(fetched)&&now>0&&now-fetched<=75_000;
   return <div className="text-right">
-    <div className="text-[20px] font-bold">{number(q.price)}</div>
+    <div className={"text-[20px] font-bold "+(fresh?"text-[#e7f7ff]":"text-[#98b5c3]")}>{number(q.price)}</div>
     <div className={"text-[12px] font-semibold " +
       (q.change24h === null ? "text-[#87adbf]" : q.change24h >= 0 ? "text-[#19dba6]" : "text-[#ff657a]")}>
-      {q.change24h === null ? "24h change unavailable" :
+      {!fresh ? "Last quote is stale" : q.change24h === null ? "24h change unavailable" :
         (q.change24h >= 0 ? "+" : "") + q.change24h.toFixed(2) + "% · Bybit 24h"}
     </div>
-    <div className="text-[9px] text-[#84aabc]">{q.source === "WEBSOCKET" ? "Live ticker" : "Snapshot"} · {new Date(q.fetchedAt).toLocaleTimeString()}</div>
+    <div className="text-[9px] text-[#84aabc]">{!fresh?"Stale "+(q.source==="WEBSOCKET"?"socket":"REST")+" quote":q.source === "WEBSOCKET" ? "Live Bybit ticker" : "Bybit snapshot"} · {new Date(q.fetchedAt).toLocaleTimeString()}</div>
   </div>;
 }
