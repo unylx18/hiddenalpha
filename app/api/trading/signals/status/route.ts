@@ -1,6 +1,9 @@
+import { authorizeMutation } from "@/lib/security/authorize-mutation";
 import { updateTradingSignalStatus } from "@/lib/trading/signal/repository";
 
 export async function PATCH(request: Request) {
+  const denied = await authorizeMutation(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
 

@@ -2,6 +2,8 @@ export type BybitLiveTicker = {
   symbol: string;
   lastPrice: number;
   price24hChange: number;
+  /** False when a Bybit delta omits the 24h change field. */
+  has24hChange?: boolean;
   markPrice: number | null;
   indexPrice: number | null;
   bidPrice: number | null;
@@ -121,6 +123,8 @@ export function createBybitTickerSocket(
           Number(
             data.price24hPcnt ?? 0
           ) * 100,
+
+        has24hChange: data.price24hPcnt !== undefined,
 
         markPrice: toNumber(
           data.markPrice
