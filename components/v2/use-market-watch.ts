@@ -101,6 +101,7 @@ export function useMarketWatch():MarketWatchState {
     return ()=>{
       activeRef.current=false;
       abortRef.current?.abort();
+      runningRef.current=false;
       window.clearInterval(interval);
       window.clearInterval(clockInterval);
       document.removeEventListener("visibilitychange",onVisibility);
