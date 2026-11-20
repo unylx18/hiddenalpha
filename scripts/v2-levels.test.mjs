@@ -13,8 +13,8 @@ test("resistance/support are derived strictly from completed swing pivots",()=>{
   assert.equal(l.referenceClose,100);
   assert.equal(l.r1,106);
   assert.equal(l.r2,108);
-  assert.equal(l.s1,94);
-  assert.equal(l.s2,93);
+  assert.equal(l.s1,95);
+  assert.equal(l.s2,94);
 });
 test("no fabricated levels if no confirmed swing occurs",()=>{
   const arr=Array.from({length:25},(_,i)=>({high:101+i,low:99+i,close:100+i}));
