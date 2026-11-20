@@ -15,14 +15,18 @@ let cache: { items: VerifiedWatchQuote[]; expiresAt: number } | null = null;
 let inFlight: Promise<VerifiedWatchQuote[]> | null = null;
 
 async function readSymbol(symbol: (typeof WATCH_SYMBOLS)[number]): Promise<VerifiedWatchQuote> {
-  const ticker = await getBybitTicker(symbol, AbortSignal.timeout(8_000));
-  let candles = null;
-  try {
-    candles = await getBybitKlines(symbol, "60", 16, undefined, AbortSignal.timeout(8_000));
-  } catch {
-    // A missing sparkline must not invalidate a genuine current market quote.
-  }
-  return normalizeWatchQuote({ symbol, ticker, rows: candles, now: Date.now() });
+  const [quoteResult, candleResult] = await Promise.allSettled([
+    getBybitTicker(symbol, AbortSignal.timeout(8_000)),
+    getBybitKlines(symbol, "60", 16, undefined, AbortSignal.timeout(8_000)),
+  ]);
+  if (quoteResult.status !== "fulfilled") throw new Error("Ticker unavailable");
+  // A missing sparkline must not invalidate a genuine current market quote.
+  return normalizeWatchQuote({
+    symbol,
+    ticker: quoteResult.value,
+    rows: candleResult.status === "fulfilled" ? candleResult.value : null,
+    now: Date.now(),
+  });
 }
 
 async function readAll(): Promise<VerifiedWatchQuote[]> {
