@@ -5,6 +5,8 @@ import { calculateAlphaContext } from "@/lib/trading/context/alpha-calculator";
 import { calculateAlphaScore } from "@/lib/trading/context/alpha-score-calculator";
 import { calculateMarketRegime } from "@/lib/trading/regime/calculator";
 import type { IndicatorResult } from "@/lib/trading/types/indicator";
+import { calculateKeyLevels, type KeyLevels } from "@/lib/trading/v2/key-levels";
+
 
 export type AnalysisCandle = {
   timestamp: string;
@@ -36,6 +38,7 @@ export type AnalysisPayload = {
     volume: { condition: string; ratio: number };
     volatility: { level: string; value: number | null; percentage: number | null };
     marketRegime: string;
+    keyLevels: KeyLevels;
     reasons: string[];
   };
 };
@@ -116,6 +119,7 @@ export function calculateV2Context({
   const context = calculateAlphaContext(indicators, volume, structure);
   const score = calculateAlphaScore(context);
   const regime = calculateMarketRegime(indicators);
+  const keyLevels = calculateKeyLevels(closed);
 
   return {
     provider,
@@ -137,6 +141,7 @@ export function calculateV2Context({
         percentage: context.volatility.percentage,
       },
       marketRegime: regime.regime,
+      keyLevels,
       reasons: score.reasons.slice(0, 8),
     },
   };
