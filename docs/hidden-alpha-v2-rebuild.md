@@ -171,6 +171,40 @@ OANDA v20 docs:
 - Do not promote local storage to a cloud record without authenticated user isolation,
   row-level security, encryption and an explicit migration/backup plan.
 
+## Phase 7 — Reference-inspired terminal refinement
+
+The visual north star is a compact navy/cyan trading terminal with a market strip,
+left TradingView chart, right AI Decision Brief, six analytics tiles, and below them
+Portfolio/Journal/Watchlist panels. **Visual fidelity never authorizes synthetic
+pricing, win rates, forecasts, fake key levels or AI claims.**
+
+- The dashboard now uses the screenshot's compact chart-to-brief layout, a highlighted
+  cyan AI Decision Brief with a validated directional score/confidence ring, six
+  insight panels, and an instrument picker header.
+- Header BTC/ETH 24-hour percentages are **real Bybit ticker snapshots** (not chart
+  feed values); at most 2 read-only REST refreshes every 2 minutes while the tab is
+  visible. Expire stale snapshots instead of retaining live-looking values.
+  Gold/EURUSD header badges are labeled "Chart only" until a verified broker quote
+  source exists. The selected Crypto symbol's main quote uses its existing separate
+  WebSocket with REST fallback.
+- Market Regime, Context Score, volume-relative activity, and ATR percentage read
+  the actual on-demand server-computed Alpha context. Forex volume is still an
+  OANDA price-update count, not traded volume.
+- The 1H/4H/1D MTF panel fetches three independent analyses ONLY when the user clicks
+  "Check", never in a background loop. Invalid, stale or unavailable timeframes are
+  marked "—", not guessed. OANDA remains optional and is not configured by this change.
+- R1/R2/S1/S2 are calculated from confirmed **closed-candle swing pivots**, with
+  two completed candles on each side for confirmation. If there are no validated
+  pivots above/below the latest close, missing levels remain blank. These are
+  contextual price references, **not guaranteed support/resistance or trade signals**.
+- Stale Alpha scores and price-context tiles are hidden rather than left visible as
+  actionable market recommendations; model confidence is an internal score and is
+  NOT a predicted percentage chance of winning.
+- No DB migrations, no broker order endpoints, no changes to authenticated accounts.
+  The previously shipped local-only Journal/Portfolio summaries remain local-only.
+- CI includes \`scripts/v2-levels.test.mjs\`, and optional live smoke tests confirm
+  the expected regime/level response without Supabase writes.
+
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
 - Do not expose any service-role or broker secret in public client components.
