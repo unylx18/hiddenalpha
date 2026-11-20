@@ -4,30 +4,20 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity, ArrowUpRight, BarChart3, BookOpen, BrainCircuit, Check,
-  CircleAlert, Clock3, FlaskConical, Gauge, Home, PlugZap, RefreshCw,
-  Search, ShieldCheck, Wallet, Wrench, Zap
+  FlaskConical, Home, PlugZap, Search, ShieldCheck, Wallet, Wrench,
 } from "lucide-react";
 import { instruments, order, timeframes, panel, type Market, type SymbolKey } from "./instruments";
 import { Mark, AssetBadge } from "./brand";
 import LiveMarketQuote from "./live-market-quote";
 import TradingViewChart from "./tradingview-chart";
 import DashboardLocalSummary from "./dashboard-local-summary";
-
-type Alpha = {
-  symbol: string;
-  timeframe: string;
-  timestamp: string;
-  market: { bias: "BULLISH" | "BEARISH" | "NEUTRAL"; score: number; confidence: number };
-  trend: { direction: string; strength: number };
-  momentum: { direction: string; strength: number };
-  volume: { condition: string; ratio: number };
-  volatility: { level: string; value: number | null; percentage: number | null };
-};
+import AlphaDecisionBrief, {type VerifiedAlpha} from "./alpha-decision-brief";
+import AlphaInsightsGrid from "./alpha-insights-grid";
 
 type AnalysisState = {
   key: string;
   loading: boolean;
-  data: Alpha | null;
+  data: VerifiedAlpha | null;
   error: string;
   stale: boolean;
   provider: string;
@@ -39,7 +29,7 @@ const frameDuration: Record<string, number> = {
   "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000,
 };
 
-function readAlpha(input: unknown): Alpha | null {
+function readAlpha(input: unknown): VerifiedAlpha | null {
   if (!input || typeof input !== "object") return null;
   const value = input as Record<string, unknown>;
   if (typeof value.symbol !== "string" || typeof value.timeframe !== "string" ||
@@ -61,20 +51,20 @@ function readAlpha(input: unknown): Alpha | null {
       typeof volume.condition !== "string" || !goodNum(volume.ratio) ||
       typeof volatility.level !== "string" ||
       !(volatility.percentage === null || goodNum(volatility.percentage))) return null;
-  return value as Alpha;
-}
-
-function Metric({label, value, sub, tone = "text-[#e9f7ff]"}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: string;
-}) {
-  return <div className={panel + " min-w-0 px-3 py-3"}>
-    <div className="text-[10px] font-semibold text-[#8fafc0]">{label}</div>
-    <div className={"mt-2 truncate text-[17px] font-bold " + tone} title={value}>{value}</div>
-    <div className="mt-1 truncate text-[9px] text-[#7199ad]">{sub || "—"}</div>
-  </div>;
+  if (!["BULLISH","BEARISH","NEUTRAL"].includes(String(value.marketRegime)) ||
+      !Array.isArray(value.reasons) || value.reasons.length > 8 ||
+      !value.reasons.every((r:unknown)=>typeof r==="string")) return null;
+  const levels = value.keyLevels;
+  if (!levels || typeof levels !== "object") return null;
+  const k = levels as Record<string, unknown>;
+  const validLevel=(v:unknown):boolean => v === null ||
+    (typeof v === "number" && Number.isFinite(v) && v > 0);
+  if (k.method!=="completed-candle-swings" ||
+      typeof k.referenceClose!=="number" || !Number.isFinite(k.referenceClose) ||
+      !["r1","r2","s1","s2"].every(key=>validLevel(k[key]))) return null;
+  if (typeof market.score !== "number" || market.score < -100 || market.score > 100 ||
+      typeof market.confidence !== "number" || market.confidence < 0 || market.confidence > 100) return null;
+  return value as VerifiedAlpha;
 }
 
 const navigation = [
@@ -99,9 +89,7 @@ export default function TradingTerminal() {
   const analysisKey = symbol + ":" + timeframe;
   const state = analysisState?.key === analysisKey ? analysisState : null;
   const analysis = state?.data ?? null;
-  const analyzedTimestamp = analysis ? Date.parse(analysis.timestamp) : NaN;
   const oldData = state?.stale ?? false;
-  const currentBias = !analysis || oldData ? "NO TRADE" : analysis.market.bias;
   const filtered = order.filter(id => instruments[id].market === market &&
     (id.toLowerCase().includes(query.toLowerCase()) ||
       instruments[id].name.toLowerCase().includes(query.toLowerCase())));
@@ -261,60 +249,24 @@ export default function TradingTerminal() {
                 </div>
               </section>
 
-              <section className={panel + " p-4"}>
-                <div className="flex items-center justify-between border-b border-[#19485b] pb-3">
-                  <h2 className="flex items-center gap-2 text-[13px] font-bold"><Zap size={18} className="text-[#1acbf5]"/> AI DECISION BRIEF</h2>
-                  <span className="rounded border border-[#225168] px-2 py-1 text-[10px] text-[#a2c4d3]">{timeframe}</span>
-                </div>
-                <div className="mt-4 rounded-lg border border-[#14566c] bg-[#062435] p-4">
-                  <div className="text-[10px] text-[#88abbc]">Stateless Alpha Engine · {symbol}</div>
-                  <div className={"mt-2 text-[25px] font-extrabold " +
-                    (currentBias === "BULLISH" ? "text-[#14dca4]" : currentBias === "BEARISH" ? "text-[#ff7182]" : "text-[#a2bbcc]")}>
-                    {currentBias}
-                  </div>
-                  <div className="mt-1 text-[10px] text-[#91b5c7]">
-                    {!analysis ? "No live analysis requested yet" :
-                        oldData ? "Historical context is stale; not actionable" :
-                          "Engine market bias, not a buy/sell instruction"}
-                  </div>
-                </div>
-                <button type="button" onClick={analyze} disabled={state?.loading === true}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#00b9e6] bg-[#075f84] px-3 py-3 text-[12px] font-bold text-white transition hover:bg-[#08799c] disabled:cursor-not-allowed disabled:border-[#36546a] disabled:bg-[#183447] disabled:text-[#82a1b0]">
-                  {state?.loading ? <RefreshCw size={15} className="animate-spin"/> : <BrainCircuit size={16}/>}
-                  {state?.loading ? "Analyzing market..." : crypto ? "Analyze with Alpha Engine" : "Analyze Forex via OANDA"}
-                </button>
-                {state?.error && <div role="alert" className="mt-3 rounded-lg border border-[#783e4a] bg-[#391a28] p-3 text-[11px] text-[#ffd3da]">
-                  <CircleAlert size={13} className="mr-1 inline"/> {state.error}
-                </div>}
-                {analysis ? <div className="mt-4 space-y-2 text-[11px]">
-                  <div className="flex justify-between border-b border-[#164253] py-2"><span className="text-[#98bac9]">Context Score</span><strong>{analysis.market.score} / 100</strong></div>
-                  <div className="flex justify-between border-b border-[#164253] py-2"><span className="text-[#98bac9]">Engine Confidence*</span><strong>{analysis.market.confidence}%</strong></div>
-                  <div className="flex justify-between border-b border-[#164253] py-2"><span className="text-[#98bac9]">Trend</span><strong>{analysis.trend.direction}</strong></div>
-                  <div className="flex justify-between border-b border-[#164253] py-2"><span className="text-[#98bac9]">Momentum</span><strong>{analysis.momentum.direction}</strong></div>
-                  <div className="flex justify-between border-b border-[#164253] py-2"><span className="text-[#98bac9]">Volume condition</span><strong>{analysis.volume.condition}</strong></div>
-                  <div className="flex items-center gap-2 pt-2 text-[10px] text-[#85a9ba]">
-                    <Clock3 size={13}/> Engine candle: {Number.isFinite(analyzedTimestamp) ? new Date(analyzedTimestamp).toLocaleString() : "Unknown"}
-                  </div>
-                </div> : <div className="mt-4 rounded-lg border border-dashed border-[#1a455a] p-4 text-[11px] leading-5 text-[#90b3c3]">
-                  <Gauge size={18} className="mb-2 text-[#1bcaf5]"/>
-                  Fast chart first. Alpha Engine computes from independent closed market candles in memory, only when requested. Forex requires server-side OANDA credentials.
-                </div>}
-                <p className="mt-4 text-[10px] leading-5 text-[#779daf]">
-                  *Confidence is an internal score, not an accuracy guarantee. TradingView chart data is separate from the Bybit/OANDA engine feed. Forex volume is a count of price updates, not traded quantity.
-                </p>
-              </section>
+              <AlphaDecisionBrief
+                alpha={analysis}
+                stale={oldData}
+                loading={state?.loading===true}
+                error={state?.error??""}
+                symbol={symbol}
+                timeframe={timeframe}
+                crypto={crypto}
+                onAnalyze={analyze}
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-6">
-              <Metric label="Market Bias" value={analysis && !oldData ? analysis.market.bias : "NO TRADE"} sub={oldData ? "Stale engine context" : crypto ? "Bybit on-demand analysis" : "Requires OANDA credentials"}
-                tone={analysis && !oldData && analysis.market.bias === "BULLISH" ? "text-[#1ddcb1]" : "text-[#c5d7df]"}/>
-              <Metric label="Context Score" value={analysis && !oldData ? String(analysis.market.score) + " / 100" : "—"} sub="Own Alpha Engine"/>
-              <Metric label="Trend / Momentum" value={analysis && !oldData ? analysis.trend.direction + " / " + analysis.momentum.direction : "—"} sub="Computed context"/>
-              <Metric label={crypto ? "Relative Volume" : "Relative Price Updates"} value={analysis && !oldData ? analysis.volume.ratio.toFixed(2) + "×" : "—"} sub={crypto ? "Recent contract activity" : "OANDA price-update count"}/>
-              <Metric label="Volatility" value={analysis && !oldData ? analysis.volatility.level : "—"} sub={analysis && !oldData && analysis.volatility.percentage != null ? analysis.volatility.percentage.toFixed(2) + "%" : "Provider-dependent"}/>
-              <Metric label="Data State" value={state?.loading ? "Analyzing" : state?.error ? "Unavailable" : analysis ? oldData ? "Stale" : "Calculated" : "Not requested"}
-                sub={crypto ? "Bybit read-only engine" : "OANDA read-only engine"} tone={analysis && !oldData ? "text-[#14dbaa]" : "text-[#a3bfcc]"}/>
-            </div>
+            <AlphaInsightsGrid
+              alpha={analysis}
+              stale={oldData}
+              symbol={symbol}
+              crypto={crypto}
+            />
 
             <div className="grid gap-3 xl:grid-cols-3">
               <DashboardLocalSummary/>
