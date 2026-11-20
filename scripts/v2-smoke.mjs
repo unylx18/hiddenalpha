@@ -83,6 +83,13 @@ if (live) {
     assert.equal(first.body.architecture, "stateless-on-demand");
     assert.ok(first.body.candleCount >= 200);
     assert.ok(["BULLISH", "BEARISH", "NEUTRAL"].includes(first.body.alpha?.market?.bias));
+    const levels = first.body.alpha?.keyLevels;
+    assert.equal(levels?.method, "completed-candle-swings");
+    assert.ok(Number.isFinite(levels?.referenceClose) && levels.referenceClose > 0);
+    for (const key of ["r1","r2","s1","s2"]) {
+      assert.ok(levels[key] === null || (Number.isFinite(levels[key]) && levels[key] > 0));
+    }
+    assert.ok(["BULLISH","BEARISH","NEUTRAL"].includes(first.body.alpha?.marketRegime));
     assert.ok(Number.isFinite(first.body.alpha?.market?.score));
     assert.ok(Number.isFinite(first.body.alpha?.market?.confidence));
     assert.ok(!Number.isNaN(Date.parse(first.body.lastClosedAt)));
