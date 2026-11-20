@@ -1,12 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import {
-  Activity, ArrowUpRight, BarChart3, BookOpen, BrainCircuit, Check,
-  FlaskConical, Home, PlugZap, Search, ShieldCheck, Wallet, Wrench,
-} from "lucide-react";
-import { instruments, order, timeframes, panel, type Market, type SymbolKey } from "./instruments";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUpRight, Check, Menu, Search, Wrench } from "lucide-react";
+import { instruments, timeframes, panel, type Market, type SymbolKey } from "./instruments";
 import { Mark, AssetBadge } from "./brand";
 import LiveMarketQuote from "./live-market-quote";
 import TradingViewChart from "./tradingview-chart";
@@ -14,6 +11,9 @@ import DashboardLocalSummary from "./dashboard-local-summary";
 import AlphaDecisionBrief, {type VerifiedAlpha} from "./alpha-decision-brief";
 import AlphaInsightsGrid from "./alpha-insights-grid";
 import TopMarketStrip from "./top-market-strip";
+import MarketWatchlist from "./market-watchlist";
+import { useMarketWatch } from "./use-market-watch";
+import { TerminalSidebar, MobileTerminalNav } from "./terminal-navigation";
 
 type AnalysisState = {
   key: string;
@@ -68,32 +68,21 @@ function readAlpha(input: unknown): VerifiedAlpha | null {
   return value as VerifiedAlpha;
 }
 
-const navigation = [
-  { name: "Dashboard V2", href: "/v2", icon: Home, current: true },
-  { name: "Market Desk", href: "/markets", icon: BarChart3 },
-  { name: "AI Analysis", href: "/scanner", icon: BrainCircuit },
-  { name: "Trading Journal", href: "/v2/journal", icon: BookOpen },
-  { name: "Portfolio Analytics", href: "/v2/portfolio", icon: Wallet },
-  { name: "Risk Manager", href: "/v2/risk", icon: ShieldCheck },
-  { name: "Strategy Lab", href: "/tools", icon: FlaskConical },
-  { name: "Integrations", href: "/tools", icon: PlugZap },
-];
-
 export default function TradingTerminal() {
   const [market, setMarket] = useState<Market>("crypto");
   const [symbol, setSymbol] = useState<SymbolKey>("BTCUSDT");
   const [timeframe, setTimeframe] = useState("15m");
   const [query, setQuery] = useState("");
   const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null);
+  const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const closeMobileMenu=useCallback(()=>setMobileMenuOpen(false),[]);
+  const watch=useMarketWatch();
   const controller = useRef<AbortController | null>(null);
   const selected = instruments[symbol];
   const analysisKey = symbol + ":" + timeframe;
   const state = analysisState?.key === analysisKey ? analysisState : null;
   const analysis = state?.data ?? null;
   const oldData = state?.stale ?? false;
-  const filtered = order.filter(id => instruments[id].market === market &&
-    (id.toLowerCase().includes(query.toLowerCase()) ||
-      instruments[id].name.toLowerCase().includes(query.toLowerCase())));
   const crypto = market === "crypto";
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -171,33 +160,19 @@ export default function TradingTerminal() {
   return (
     <div className="min-h-screen bg-[#03121c] font-sans text-[#e7f7ff]">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[208px] shrink-0 flex-col border-r border-[#133b4f] bg-[#041522] lg:flex">
-          <div className="flex items-center gap-2 border-b border-[#173c4f] px-3 py-5">
-            <Mark/>
-            <div>
-              <strong className="text-[14px] font-extrabold tracking-tight">HIDDEN ALPHA <span className="text-[#1bcaf5]">V2</span></strong>
-              <div className="mt-1 text-[9px] tracking-[.16em] text-[#81adbf]">TRADING INTELLIGENCE</div>
-            </div>
-          </div>
-          <nav className="flex-1 space-y-1 px-3 py-6">
-            {navigation.map(({name,href,icon:Icon,current})=><Link key={name} href={href}
-              className={"flex items-center gap-3 rounded-lg border px-3 py-3 text-[12px] transition " +
-                (current ? "border-[#1baee0] bg-[#0b4562] text-white" :
-                  "border-transparent text-[#91b0c0] hover:bg-[#123447]")}>
-              <Icon size={17}/><span className="flex-1">{name}</span>
-              {!current && !href.startsWith("/v2") && <span className="text-[8px] text-[#64899d]">OLD</span>}
-            </Link>)}
-          </nav>
-          <div className="border-t border-[#15384d] p-4 text-[10px] leading-5 text-[#7295a8]">
-            V2 is isolated from legacy background candle sync.
-            <div className="mt-2 text-[#18c6f3]">Chart: TradingView</div>
-            <div className="text-[#18c6f3]">Engine: Bybit / own API</div>
-          </div>
-        </aside>
+        <TerminalSidebar/>
         <main className="min-w-0 flex-1">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#133e53] px-4 py-3 lg:px-5">
-            <div className="flex items-center gap-2 lg:hidden"><Mark/><strong>HIDDEN ALPHA V2</strong></div>
-            <TopMarketStrip selected={symbol} onSelect={selectSymbol}/>
+            <div className="flex items-center gap-2 lg:hidden">
+              <button type="button" aria-label="Open Hidden Alpha navigation"
+                aria-expanded={mobileMenuOpen} aria-controls="hiddenalpha-v2-mobile-drawer"
+                onClick={()=>setMobileMenuOpen(true)}
+                className="rounded-lg border border-[#226180] bg-[#08283b] p-2.5 text-[#b5edff] focus-visible:outline-2 focus-visible:outline-[#1cd1f2]">
+                <Menu size={19}/>
+              </button>
+              <Mark/><strong className="whitespace-nowrap text-[12px]">HIDDEN ALPHA <span className="text-[#19cef2]">V2</span></strong>
+            </div>
+            <TopMarketStrip selected={symbol} onSelect={selectSymbol} watch={watch}/>
             <div className="rounded border border-[#145c70] bg-[#093044] px-2 py-1 text-[10px] text-[#b0d6e5]">
               <span className="mr-1 text-[#19dbac]">●</span> V2 Beta · Read-only
             </div>
@@ -264,16 +239,12 @@ export default function TradingTerminal() {
 
             <div className="grid gap-3 xl:grid-cols-3">
               <DashboardLocalSummary/>
-              <section className={panel + " p-4"}>
-                <div className="flex items-center justify-between text-[13px] font-bold"><span className="flex items-center gap-2"><Activity size={16} className="text-[#20c6ee]"/> Market Watchlist</span><span className="text-[9px] font-normal text-[#7798a9]">Symbols only</span></div>
-                <div className="mt-3 space-y-1">
-                  {filtered.length ? filtered.map(id => <button key={id} type="button" onClick={()=>selectSymbol(id)}
-                    className={"flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-[#123749] " + (symbol === id ? "bg-[#0b3a51]" : "")}>
-                    <AssetBadge id={id} small/><span className="flex-1 text-[11px] font-semibold">{id}</span>
-                    <span className="text-[10px] text-[#87adbf]">{instruments[id].venue}</span>
-                  </button>) : <p className="p-3 text-[11px] text-[#87a7b5]">No symbols match your search.</p>}
-                </div>
-              </section>
+              <MarketWatchlist
+                watch={watch}
+                selected={symbol}
+                onSelect={selectSymbol}
+                query={query}
+              />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#123c51] pt-3 text-[10px] text-[#759cae]">
               <div>TradingView hosts the chart. Alpha Engine fetches Bybit/OANDA candles on demand. Neither flow writes candles to Supabase.</div>
@@ -285,6 +256,7 @@ export default function TradingTerminal() {
           </div>
         </main>
       </div>
+      <MobileTerminalNav open={mobileMenuOpen} onClose={closeMobileMenu}/>
     </div>
   );
 }
