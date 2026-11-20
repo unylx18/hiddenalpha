@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, RefreshCw } from "lucide-react";
-import { Mark, AssetBadge } from "./brand";
+import { AssetBadge } from "./brand";
 import { instruments, order, panel, type SymbolKey } from "./instruments";
 import { quoteIsFresh, type MarketWatchState } from "./use-market-watch";
 
