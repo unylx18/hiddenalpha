@@ -13,6 +13,7 @@ import TradingViewChart from "./tradingview-chart";
 import DashboardLocalSummary from "./dashboard-local-summary";
 import AlphaDecisionBrief, {type VerifiedAlpha} from "./alpha-decision-brief";
 import AlphaInsightsGrid from "./alpha-insights-grid";
+import TopMarketStrip from "./top-market-strip";
 
 type AnalysisState = {
   key: string;
@@ -196,14 +197,7 @@ export default function TradingTerminal() {
         <main className="min-w-0 flex-1">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#133e53] px-4 py-3 lg:px-5">
             <div className="flex items-center gap-2 lg:hidden"><Mark/><strong>HIDDEN ALPHA V2</strong></div>
-            <div className="flex flex-wrap gap-2">
-              {(["BTCUSDT","ETHUSDT","XAUUSD","EURUSD"] as SymbolKey[]).map(id =>
-                <button type="button" key={id} onClick={()=>selectSymbol(id)}
-                  className={"flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] " +
-                    (symbol === id ? "border-[#17bee9] bg-[#0a4965]" : "border-[#164255] bg-[#071b29] hover:border-[#0d85af]")}>
-                  <AssetBadge id={id} small/><strong>{id}</strong>
-                </button>)}
-            </div>
+            <TopMarketStrip selected={symbol} onSelect={selectSymbol}/>
             <div className="rounded border border-[#145c70] bg-[#093044] px-2 py-1 text-[10px] text-[#b0d6e5]">
               <span className="mr-1 text-[#19dbac]">●</span> V2 Beta · Read-only
             </div>
