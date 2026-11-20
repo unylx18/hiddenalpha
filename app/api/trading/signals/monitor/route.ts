@@ -1,3 +1,4 @@
+import { authorizeMutation } from "@/lib/security/authorize-mutation";
 import {
   NextResponse,
 } from "next/server";
@@ -6,7 +7,9 @@ import {
   monitorActiveSignals,
 } from "@/lib/trading/signal/lifecycle-monitor-service";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = await authorizeMutation(request);
+  if (denied) return denied;
   try {
     const result =
       await monitorActiveSignals();

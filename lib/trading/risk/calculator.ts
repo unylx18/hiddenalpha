@@ -26,6 +26,29 @@ export function calculateRisk(
     slippagePercent = DEFAULT_SLIPPAGE_PERCENT,
   } = input;
 
+  if (direction !== "LONG" && direction !== "SHORT") {
+    throw new Error("Direction must be LONG or SHORT");
+  }
+
+  for (const [name, value] of [
+    ["accountBalance", accountBalance],
+    ["riskPercent", riskPercent],
+    ["entryPrice", entryPrice],
+    ["stopLossPrice", stopLossPrice],
+    ["leverage", leverage],
+    ["feePercent", feePercent],
+    ["slippagePercent", slippagePercent],
+  ] as const) {
+    if (!Number.isFinite(value)) {
+      throw new Error(`${name} must be a finite number`);
+    }
+  }
+
+  if (takeProfitPrice !== undefined &&
+      (!Number.isFinite(takeProfitPrice) || takeProfitPrice <= 0)) {
+    throw new Error("Take profit must be a positive finite number");
+  }
+
   if (accountBalance <= 0) {
     throw new Error(
       "Account balance must be greater than 0"
@@ -143,6 +166,12 @@ export function calculateRisk(
   const totalEstimatedCost =
     estimatedFees +
     estimatedSlippage;
+
+  if (!Number.isFinite(marginRequired) ||
+      !Number.isFinite(totalEstimatedCost) ||
+      marginRequired + totalEstimatedCost > accountBalance) {
+    throw new Error("Required margin plus estimated costs exceeds account balance");
+  }
 
   const potentialLoss =
     positionSize * stopDistance;

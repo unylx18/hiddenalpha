@@ -20,7 +20,12 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.HIDDENALPHA_CRON_SECRET }}
         run: |
-          set -e
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::HIDDENALPHA_CRON_SECRET GitHub Actions secret is missing."
+            exit 1
+          fi
 
           echo "Triggering HiddenAlpha production desk cycle..."
 
@@ -43,6 +48,10 @@ jobs:
           )"
 
           cat "$response_file"
+
+          if [ "$http_code" = "401" ]; then
+            echo "::error::HiddenAlpha cron authorization failed. Check that the GitHub Actions HIDDENALPHA_CRON_SECRET value exactly matches the Vercel Production CRON_SECRET value; do not print either secret."
+          fi
 
           echo ""
           echo "HTTP Status: ${http_code}"
