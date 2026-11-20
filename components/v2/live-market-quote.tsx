@@ -77,6 +77,7 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
         const now = Date.now();
         if (now - lastSocketUpdate < 1_000) return;
         lastSocketUpdate = now;
+        socketOpen = true;
         setNow(now);
         if (fallback) { clearInterval(fallback); fallback=undefined; }
         setState(previous => ({
@@ -125,6 +126,8 @@ export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
       if(!active || document.visibilityState!=="visible")return;
       const last=lastSocketUpdate||socketOpenedAt;
       if(socketOpen && last>0 && instant-last>45_000 && !fallback){
+        // Allow fresh REST snapshot to supersede the silent WebSocket quote.
+        socketOpen=false;
         void fetchSnapshot();
         fallback=setInterval(()=>{
           if(document.visibilityState==="visible")void fetchSnapshot();
