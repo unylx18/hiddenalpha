@@ -5,6 +5,7 @@
  *   node scripts/v2-smoke.mjs
  *   node scripts/v2-smoke.mjs --live
  *   node scripts/v2-smoke.mjs --forex
+ *   node scripts/v2-smoke.mjs --watch (real public Bybit watchlist request)
  *
  * The default checks do NOT contact Bybit or modify any data.
  * --live makes a read-only, real provider request; it may fail if Bybit is unavailable.
@@ -122,6 +123,34 @@ if (forex) {
   });
 } else {
   console.log("SKIP Forex connector test (use --forex to check configured OANDA endpoint)");
+}
+
+if (process.argv.includes("--watch")) {
+  await check("Real read-only Bybit watchlist snapshot with verified sparklines", async () => {
+    const {response,body}=await call("/api/v2/market/watchlist");
+    assert.equal(response.status,200,JSON.stringify(body));
+    assert.equal(body.success,true);
+    assert.equal(body.provider,"bybit-linear");
+    assert.equal(response.headers.get("cache-control"),"no-store");
+    assert.ok(Array.isArray(body.items)&&body.items.length>=1&&body.items.length<=3);
+    const supported=new Set(["BTCUSDT","ETHUSDT","SOLUSDT"]);
+    for (const item of body.items) {
+      assert.ok(supported.has(item.symbol));
+      assert.ok(Number.isFinite(item.price)&&item.price>0);
+      assert.ok(Number.isFinite(item.change24hPercent));
+      assert.ok(Number.isFinite(Date.parse(item.fetchedAt)));
+      assert.equal(item.provider,"bybit-linear");
+      if(item.sparkline!==null){
+        assert.ok(Array.isArray(item.sparkline));
+        assert.ok(item.sparkline.length>=8&&item.sparkline.length<=14);
+        assert.ok(item.sparkline.every(v=>Number.isFinite(v)&&v>0));
+      }
+    }
+    console.log("     Valid symbols:",body.items.map(x=>x.symbol).join(", "));
+    console.log("     Sparkline samples:",body.items.map(x=>x.symbol+"="+(x.sparkline?.length??0)).join(", "));
+  });
+} else {
+  console.log("SKIP real market watchlist test (use --watch to enable)");
 }
 
 console.log(failures ? "\nV2 smoke FAILED: " + failures + " issue(s)." : "\nV2 smoke PASSED.");
