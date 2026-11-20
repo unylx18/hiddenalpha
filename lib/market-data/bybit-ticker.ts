@@ -10,7 +10,8 @@ export type BybitTicker = {
 };
 
 export async function getBybitTicker(
-  symbol: string
+  symbol: string,
+  signal?: AbortSignal
 ): Promise<BybitTicker> {
   const url = new URL(
     "/v5/market/tickers",
@@ -22,6 +23,7 @@ export async function getBybitTicker(
 
   const response = await fetch(url.toString(), {
     cache: "no-store",
+    signal,
   });
 
   if (!response.ok) {
