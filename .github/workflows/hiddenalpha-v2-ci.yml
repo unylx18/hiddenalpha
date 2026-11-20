@@ -1,0 +1,38 @@
+name: HiddenAlpha V2 release validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Build-only placeholder credentials, NOT real Supabase access.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-build-only-anon-key
+      # Do not pass CRON_SECRET, OANDA credentials, or service-role keys to CI.
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: V2 pure model regression
+        run: node --test scripts/v2-risk.test.mjs scripts/v2-journal.test.mjs scripts/v2-portfolio.test.mjs
+      - name: V2 scoped ESLint
+        run: npx eslint app/v2 app/api/v2 components/v2 lib/trading/v2 lib/market-data/oanda-candles.ts scripts/v2-smoke.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Next.js production build
+        run: npm run build
