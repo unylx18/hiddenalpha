@@ -24,6 +24,7 @@ export default function TopMarketStrip({selected,onSelect}:{
   onSelect:(symbol:SymbolKey)=>void;
 }) {
   const [quotes,setQuotes]=useState<SnapshotState>({});
+  const [clock,setClock]=useState(0);
   useEffect(()=>{
     let active=true;
     const controller=new AbortController();
@@ -55,6 +56,7 @@ export default function TopMarketStrip({selected,onSelect}:{
     }
     function refresh() {
       if(document.visibilityState!=="visible")return;
+      setClock(Date.now());
       void readSnapshot("BTCUSDT");
       void readSnapshot("ETHUSDT");
     }
@@ -66,10 +68,11 @@ export default function TopMarketStrip({selected,onSelect}:{
   return <div aria-label="Market quick selector" className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
     {PICKS.map(symbol=>{
       const quote=quotes[symbol];
+      const fresh=quote && clock - quote.receivedAt <= 300_000;
       const forex=symbol==="XAUUSD"||symbol==="EURUSD";
       const active=selected===symbol;
       return <button key={symbol} type="button" onClick={()=>onSelect(symbol)}
-        title={quote?symbol+" snapshot: "+priceText(quote.price)+" · "+new Date(quote.receivedAt).toLocaleTimeString():"Select "+symbol}
+        title={quote?symbol+" snapshot: "+priceText(quote.price)+" · "+new Date(quote.receivedAt).toLocaleTimeString()+(fresh?"":" (stale)"):"Select "+symbol}
         className={"flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition "+
           (active?"border-[#14c8eb] bg-[#0a344b] shadow-[0_0_15px_rgba(0,194,240,.15)]":
             "border-[#20475d] bg-[#071b29] hover:border-[#138bab]")}>
@@ -77,9 +80,9 @@ export default function TopMarketStrip({selected,onSelect}:{
         <div className="flex flex-col gap-1">
           <strong className="text-[11px] leading-none text-[#e4f7ff]">{symbol}</strong>
           <span className={"text-[10px] leading-none "+
-            (!forex&&quote?(quote.changePercent>=0?"text-[#1de4ad]":"text-[#ff728a]"):"text-[#83a9bb]")}>
-            {forex?"Chart only":quote?
-              (quote.changePercent>=0?"+":"")+quote.changePercent.toFixed(2)+"% · 24h":"Quote unavailable"}
+            (!forex&&fresh&&quote?(quote.changePercent>=0?"text-[#1de4ad]":"text-[#ff728a]"):"text-[#83a9bb]")}>
+            {forex?"Chart only":fresh&&quote?
+              (quote.changePercent>=0?"+":"")+quote.changePercent.toFixed(2)+"% · 24h":quote?"Snapshot stale":"Quote unavailable"}
           </span>
         </div>
       </button>;
