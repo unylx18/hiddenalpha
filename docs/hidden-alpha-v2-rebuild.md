@@ -205,6 +205,40 @@ pricing, win rates, forecasts, fake key levels or AI claims.**
 - CI includes \`scripts/v2-levels.test.mjs\`, and optional live smoke tests confirm
   the expected regime/level response without Supabase writes.
 
+## Phase 8 — Market watch and responsive navigation
+
+- The target UI remains the user's dark navy/cyan compact screenshot:
+  chart + AI Decision Brief first, six analysis panels, then separate
+  Portfolio, Journal and Watchlist panels. No dummy financial metrics are allowed.
+- The V2 desktop sidebar now has a corresponding accessible **mobile menu drawer**.
+  It supports keyboard Escape/Tab focus wrap, focus restoration, clear exit controls
+  and real links for V2 Journal, Portfolio and Risk Manager.
+- Watchlist now shows all six supported symbols and uses a **single shared fetch
+  loop** with the header; selecting a row changes the chart instrument.
+  It never guesses a Forex quote. Forex rows say "Chart only" until the optional
+  OANDA connection is authenticated and validated.
+- \`GET /api/v2/market/watchlist\`: read-only public endpoint for BTCUSDT, ETHUSDT
+  and SOLUSDT Bybit linear contracts only. It fetches current tickers and up to
+  16 hourly candles in parallel with 8-second upstream timeouts. It normalizes
+  prices and timestamps, excludes unclosed hours and validates at least 8
+  consecutive completed closes before drawing a sparkline; unavailable
+  sparklines remain blank. It never fabricates intermediate prices.
+- Single in-process cached response (60-second TTL) and in-flight coalescing
+  reduce duplicate Bybit calls within an instance; a global distributed rate
+  limit is still required before high-traffic public launch.
+- The client refetches at most every 2 minutes while visible, and also upon
+  returning to a tab after 1 minute; snapshot prices and percent changes are
+  labeled unavailable/stale after 3 minutes. Header and watchlist share one
+  stateful feed. The main selected Crypto quote still uses its independent
+  WebSocket/REST connection, now with a 45-second silent-socket watchdog;
+  expired quotes are explicitly labeled instead of remaining falsely live.
+- New pure regression test: \`node --test scripts/v2-watch.test.mjs\`.
+  Optional real-provider smoke: \`node scripts/v2-smoke.mjs --watch\`
+  (not run in CI; may fail during provider outage).
+- These changes do **not** alter trading orders, account secrets, Supabase,
+  migrations, local journal records, portfolio records or the independent
+  TradingView chart.
+
 ## Security / release gates
 - Do not merge PR #2 until security PR #1 and backend authorization issues are resolved.
 - Do not expose any service-role or broker secret in public client components.
