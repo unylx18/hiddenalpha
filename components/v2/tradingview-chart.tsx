@@ -110,7 +110,7 @@ export default function TradingViewChart({
   }, [widgetSymbol, interval]);
 
   return (
-    <div className="relative min-h-[390px] w-full md:min-h-[490px]">
+    <div className="relative h-[365px] w-full md:h-[400px] 2xl:h-[410px]">
       <div ref={hostRef} className="absolute inset-0" aria-label={"TradingView chart " + widgetSymbol}/>
       <noscript>JavaScript is required to display the TradingView chart.</noscript>
     </div>
