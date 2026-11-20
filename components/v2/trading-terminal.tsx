@@ -11,6 +11,7 @@ import { instruments, order, timeframes, panel, type Market, type SymbolKey } fr
 import { Mark, AssetBadge } from "./brand";
 import LiveMarketQuote from "./live-market-quote";
 import TradingViewChart from "./tradingview-chart";
+import DashboardLocalSummary from "./dashboard-local-summary";
 
 type Alpha = {
   symbol: string;
@@ -305,29 +306,18 @@ export default function TradingTerminal() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-6">
-              <Metric label="Market Bias" value={analysis && !oldData ? analysis.market.bias : "NO TRADE"} sub={oldData ? "Stale engine context" : crypto ? "After requesting analysis" : "Forex adapter pending"}
+              <Metric label="Market Bias" value={analysis && !oldData ? analysis.market.bias : "NO TRADE"} sub={oldData ? "Stale engine context" : crypto ? "Bybit on-demand analysis" : "Requires OANDA credentials"}
                 tone={analysis && !oldData && analysis.market.bias === "BULLISH" ? "text-[#1ddcb1]" : "text-[#c5d7df]"}/>
-              <Metric label="Context Score" value={analysis ? String(analysis.market.score) + " / 100" : "—"} sub="Own Alpha Engine"/>
-              <Metric label="Trend / Momentum" value={analysis ? analysis.trend.direction + " / " + analysis.momentum.direction : "—"} sub="Computed context"/>
-              <Metric label={crypto ? "Relative Volume" : "Relative Price Updates"} value={analysis ? analysis.volume.ratio.toFixed(2) + "×" : "—"} sub={crypto ? "Recent contract activity" : "OANDA price-update count"}/>
-              <Metric label="Volatility" value={analysis ? analysis.volatility.level : "—"} sub={analysis?.volatility.percentage != null ? analysis.volatility.percentage.toFixed(2) + "%" : "Provider-dependent"}/>
-              <Metric label="Data State" value={!crypto ? "Not connected" : state?.loading ? "Analyzing" : state?.error ? "Unavailable" : analysis ? oldData ? "Stale" : "Calculated" : "Not requested"}
+              <Metric label="Context Score" value={analysis && !oldData ? String(analysis.market.score) + " / 100" : "—"} sub="Own Alpha Engine"/>
+              <Metric label="Trend / Momentum" value={analysis && !oldData ? analysis.trend.direction + " / " + analysis.momentum.direction : "—"} sub="Computed context"/>
+              <Metric label={crypto ? "Relative Volume" : "Relative Price Updates"} value={analysis && !oldData ? analysis.volume.ratio.toFixed(2) + "×" : "—"} sub={crypto ? "Recent contract activity" : "OANDA price-update count"}/>
+              <Metric label="Volatility" value={analysis && !oldData ? analysis.volatility.level : "—"} sub={analysis && !oldData && analysis.volatility.percentage != null ? analysis.volatility.percentage.toFixed(2) + "%" : "Provider-dependent"}/>
+              <Metric label="Data State" value={state?.loading ? "Analyzing" : state?.error ? "Unavailable" : analysis ? oldData ? "Stale" : "Calculated" : "Not requested"}
                 sub={crypto ? "Bybit read-only engine" : "OANDA read-only engine"} tone={analysis && !oldData ? "text-[#14dbaa]" : "text-[#a3bfcc]"}/>
             </div>
 
             <div className="grid gap-3 xl:grid-cols-3">
-              <section className={panel + " p-4"}>
-                <div className="flex items-center gap-2 text-[13px] font-bold"><Wallet size={16} className="text-[#20c6ee]"/> Portfolio Overview</div>
-                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Manual Portfolio Ready</div>
-                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Track long-only holdings, manual mark prices and cash. Realized journal results remain separate; no broker sync or fabricated holdings.</p>
-                <Link href="/v2/portfolio" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">Open V2 Portfolio <ArrowUpRight size={12}/></Link>
-              </section>
-              <section className={panel + " p-4"}>
-                <div className="flex items-center gap-2 text-[13px] font-bold"><BookOpen size={16} className="text-[#20c6ee]"/> Trading Journal</div>
-                <div className="mt-4 text-[22px] font-bold text-[#a6c0ce]">Local Journal Ready</div>
-                <p className="mt-2 text-[11px] leading-5 text-[#8caebd]">Record closed trades manually or import the Hidden Alpha CSV template. Entries remain local to your browser; broker sync is not connected.</p>
-                <Link href="/v2/journal" className="mt-4 inline-flex items-center gap-1 text-[11px] text-[#1ccbf4]">Open V2 Trading Journal <ArrowUpRight size={12}/></Link>
-              </section>
+              <DashboardLocalSummary/>
               <section className={panel + " p-4"}>
                 <div className="flex items-center justify-between text-[13px] font-bold"><span className="flex items-center gap-2"><Activity size={16} className="text-[#20c6ee]"/> Market Watchlist</span><span className="text-[9px] font-normal text-[#7798a9]">Symbols only</span></div>
                 <div className="mt-3 space-y-1">
