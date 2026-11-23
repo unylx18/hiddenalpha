@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import TradingTerminal from "@/components/v2/trading-terminal";
 
 export const metadata: Metadata = {
-  title: "Hidden Alpha V2 | Trading Intelligence",
-  description: "Read-only crypto and forex market intelligence workspace with verified on-demand analysis and local trading records.",
+  title: "Market Command Center | Hidden Alpha V2",
+  description: "Your market command center: chart intelligence, on-demand market scanner, trading journal, portfolio and risk tools.",
 };
 
 export default function V2Page() {

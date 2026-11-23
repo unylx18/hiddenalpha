@@ -40,7 +40,7 @@ try {
   assert.equal(ready, true, "Built Next.js server was not ready within 25s");
 
   for (const [path, marker] of [
-    ["/v2", "Hidden Alpha"],
+    ["/v2", "Market Command Center"],
     ["/v2/scanner", "Crypto Market Scanner"],
     ["/v2/portfolio", "Portfolio Analytics"],
     ["/v2/journal", "Trading Journal"],

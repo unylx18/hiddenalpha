@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, Menu, Search, Wrench, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowUpRight, Check, CircleHelp, Menu, Search, Wrench, Maximize2, Minimize2 } from "lucide-react";
 import { instruments, order, timeframes, panel, type Market, type SymbolKey } from "./instruments";
 import { Mark, AssetBadge } from "./brand";
 import LiveMarketQuote from "./live-market-quote";
@@ -12,7 +12,10 @@ import AlphaDecisionBrief, {type VerifiedAlpha} from "./alpha-decision-brief";
 import AlphaInsightsGrid from "./alpha-insights-grid";
 import TopMarketStrip from "./top-market-strip";
 import MarketWatchlist from "./market-watchlist";
-import { useMarketWatch } from "./use-market-watch";
+import {useMarketWatch,quoteIsFresh} from "./use-market-watch";
+import TerminalWelcome from "./terminal-welcome";
+import FirstRunGuide from "./first-run-guide";
+import {ONBOARDING_STORAGE_KEY,readOnboardingState,type OnboardingState} from "@/lib/trading/v2/onboarding";
 import { TerminalSidebar, MobileTerminalNav } from "./terminal-navigation";
 import {TERMINAL_PREFS_KEY,parseTerminalPrefs} from "@/lib/trading/v2/terminal-preferences";
 import {decodeScannerChartLink} from "@/lib/trading/v2/market-scanner-model";
@@ -81,6 +84,7 @@ export default function TradingTerminal() {
   const [suggestionIndex,setSuggestionIndex]=useState(0);
   const [searchOpen,setSearchOpen]=useState(false);
   const [prefsReady,setPrefsReady]=useState(false);
+  const [tourOpen,setTourOpen]=useState(false);
   const closeMobileMenu=useCallback(()=>setMobileMenuOpen(false),[]);
   const watch=useMarketWatch();
   const controller = useRef<AbortController | null>(null);
@@ -91,10 +95,27 @@ export default function TradingTerminal() {
   const analysis = state?.data ?? null;
   const oldData = state?.stale ?? false;
   const crypto = market === "crypto";
+  const hasFreshCrypto=Object.values(watch.quotes).some(quote=>quoteIsFresh(quote,watch.now));
+  const feedState=watch.loading?"loading":watch.unavailable||!hasFreshCrypto?"unavailable":"ready";
+  const openTour=useCallback(()=>setTourOpen(true),[]);
+  const finishTour=useCallback((choice:Exclude<OnboardingState,"pending">)=>{
+    setTourOpen(false);
+    try{window.localStorage.setItem(ONBOARDING_STORAGE_KEY,choice);}catch{}
+  },[]);
+  const dismissTour=useCallback(()=>finishTour("dismissed"),[finishTour]);
+  const completeTour=useCallback(()=>finishTour("completed"),[finishTour]);
   const matches=query.trim()?order.filter(id=>id.toLowerCase().includes(query.trim().toLowerCase())||
     instruments[id].name.toLowerCase().includes(query.trim().toLowerCase())).slice(0,9):[];
 
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(()=>{
+    const id=window.setTimeout(()=>{
+      let saved:string|null=null;
+      try{saved=window.localStorage.getItem(ONBOARDING_STORAGE_KEY);}catch{}
+      if(readOnboardingState(saved)==="pending")setTourOpen(true);
+    },350);
+    return ()=>window.clearTimeout(id);
+  },[]);
   useEffect(()=>{
     const timer=window.setTimeout(()=>{
       let saved=null;
@@ -221,11 +242,19 @@ export default function TradingTerminal() {
               <Mark/><strong className="whitespace-nowrap text-[12px]">HIDDEN ALPHA <span className="text-[#19cef2]">V2</span></strong>
             </div>
             <TopMarketStrip selected={symbol} onSelect={selectSymbol} watch={watch}/>
-            <div className="rounded border border-[#145c70] bg-[#093044] px-2 py-1 text-[10px] text-[#b0d6e5]">
-              <span className="mr-1 text-[#19dbac]">●</span> V2 Beta · Read-only
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={openTour} title="Open the Hidden Alpha quick tour"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#25647a] bg-[#082839] px-2.5 py-2 text-[10px] font-semibold text-[#b8e5ed] transition hover:bg-[#114258] focus-visible:outline-2 focus-visible:outline-[#58e3e0]">
+                <CircleHelp size={14}/> <span className="hidden sm:inline">Guide</span>
+              </button>
+              <div className="rounded-lg border border-[#145c70] bg-[#093044] px-2.5 py-2 text-[10px] text-[#b0d6e5]">
+                <span className="mr-1 text-[#19dbac]">●</span> V2 · Read-only
+              </div>
             </div>
           </header>
           <div className="mx-auto max-w-[1750px] space-y-3 px-3 py-4 lg:px-5">
+            <TerminalWelcome onOpenGuide={openTour} onFocusSearch={()=>searchRef.current?.focus()}
+              feed={feedState}/>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex rounded-lg border border-[#19546b] bg-[#061927] p-1">
                 {(["crypto","forex"] as Market[]).map(type =>
@@ -333,6 +362,7 @@ export default function TradingTerminal() {
         </main>
       </div>
       <MobileTerminalNav open={mobileMenuOpen} onClose={closeMobileMenu}/>
+      <FirstRunGuide open={tourOpen} onDismiss={dismissTour} onComplete={completeTour}/>
     </div>
   );
 }
