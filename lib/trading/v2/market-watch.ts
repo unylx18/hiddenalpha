@@ -3,9 +3,10 @@
  * No synthetic prices, no persistence, and no broker/account credentials.
  */
 import type { BybitKline } from "@/lib/market-data/bybit";
+import {CRYPTO_SYMBOLS} from "@/lib/trading/v2/symbol-registry";
 import type { BybitTicker } from "@/lib/market-data/bybit-ticker";
 
-export const WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
+export const WATCH_SYMBOLS = CRYPTO_SYMBOLS;
 export type WatchSymbol = (typeof WATCH_SYMBOLS)[number];
 
 export type VerifiedWatchQuote = {

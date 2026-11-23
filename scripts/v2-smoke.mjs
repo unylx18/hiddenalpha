@@ -132,8 +132,8 @@ if (process.argv.includes("--watch")) {
     assert.equal(body.success,true);
     assert.equal(body.provider,"bybit-linear");
     assert.equal(response.headers.get("cache-control"),"no-store");
-    assert.ok(Array.isArray(body.items)&&body.items.length>=1&&body.items.length<=3);
-    const supported=new Set(["BTCUSDT","ETHUSDT","SOLUSDT"]);
+    assert.ok(Array.isArray(body.items)&&body.items.length>=1&&body.items.length<=12);
+    const supported=new Set(["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","BNBUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","SUIUSDT","LTCUSDT","DOTUSDT"]);
     for (const item of body.items) {
       assert.ok(supported.has(item.symbol));
       assert.ok(Number.isFinite(item.price)&&item.price>0);

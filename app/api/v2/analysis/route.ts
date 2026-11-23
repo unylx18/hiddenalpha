@@ -1,11 +1,12 @@
 import { getBybitKlines } from "@/lib/market-data/bybit";
+import {CRYPTO_SYMBOLS} from "@/lib/trading/v2/symbol-registry";
 import { getBybitTimeframe } from "@/lib/market-data/config/timeframes";
 import { calculateV2Context, AnalysisInputError, type AnalysisPayload, type AnalysisCandle } from "@/lib/trading/v2/stateless-analysis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SYMBOLS = new Set(["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
+const SYMBOLS = new Set<string>(CRYPTO_SYMBOLS);
 const FRAME_MS: Record<string, number> = {
   "1m": 60_000,
   "3m": 180_000,
@@ -17,7 +18,7 @@ const FRAME_MS: Record<string, number> = {
 };
 
 // In-process, best-effort sharing. This is not a distributed rate limiter.
-// Only 3 symbols x 7 timeframes are accepted; no unbounded user-controlled keys.
+// Twelve allowlisted symbols x seven timeframes, never arbitrary user-controlled keys.
 const completedCache = new Map<string, { data: AnalysisPayload; expiresAt: number }>();
 const pendingRequests = new Map<string, Promise<AnalysisPayload>>();
 const MAX_CACHED = SYMBOLS.size * Object.keys(FRAME_MS).length;

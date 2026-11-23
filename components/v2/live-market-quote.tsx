@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createBybitTickerSocket } from "@/lib/market-data/bybit-live";
-import { number, type SymbolKey } from "./instruments";
+import { number, instruments, type SymbolKey } from "./instruments";
 
 type Quote = {
   price: number;
@@ -18,7 +18,7 @@ type QuoteState = {
 };
 
 export default function LiveMarketQuote({ symbol }: { symbol: SymbolKey }) {
-  const crypto = symbol === "BTCUSDT" || symbol === "ETHUSDT" || symbol === "SOLUSDT";
+  const crypto = instruments[symbol].market === "crypto";
   const [state, setState] = useState<QuoteState | null>(null);
   const [now,setNow] = useState(0);
 

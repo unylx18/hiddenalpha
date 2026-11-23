@@ -48,6 +48,8 @@ test("bad OHLC and unsupported tickers do not pass as valid data",()=>{
   assert.throws(()=>normalizeWatchQuote({symbol:"BTCUSDT",ticker:{...ticker,lastPrice:NaN},rows:samples(),now}),/Invalid/);
   assert.throws(()=>normalizeWatchQuote({symbol:"BTCUSDT",ticker:{...ticker,price24hChange:Infinity},rows:samples(),now}),/Invalid/);
 });
-test("watchlist symbol allowlist is strictly limited to three Bybit linear markets",()=>{
-  assert.deepEqual([...WATCH_SYMBOLS],["BTCUSDT","ETHUSDT","SOLUSDT"]);
+test("watchlist symbol allowlist contains twelve supported Bybit linear markets",()=>{
+  assert.equal(WATCH_SYMBOLS.length,12);
+  assert.equal(new Set(WATCH_SYMBOLS).size,12);
+  assert.deepEqual(WATCH_SYMBOLS.slice(0,3),["BTCUSDT","ETHUSDT","SOLUSDT"]);
 });

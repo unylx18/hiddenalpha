@@ -12,6 +12,15 @@ const chartSymbols: Record<SymbolKey, string> = {
   BTCUSDT: "BYBIT:BTCUSDT.P",
   ETHUSDT: "BYBIT:ETHUSDT.P",
   SOLUSDT: "BYBIT:SOLUSDT.P",
+  XRPUSDT: "BYBIT:XRPUSDT.P",
+  BNBUSDT: "BYBIT:BNBUSDT.P",
+  DOGEUSDT: "BYBIT:DOGEUSDT.P",
+  ADAUSDT: "BYBIT:ADAUSDT.P",
+  AVAXUSDT: "BYBIT:AVAXUSDT.P",
+  LINKUSDT: "BYBIT:LINKUSDT.P",
+  SUIUSDT: "BYBIT:SUIUSDT.P",
+  LTCUSDT: "BYBIT:LTCUSDT.P",
+  DOTUSDT: "BYBIT:DOTUSDT.P",
   XAUUSD: "OANDA:XAUUSD",
   EURUSD: "OANDA:EURUSD",
   GBPUSD: "OANDA:GBPUSD",
@@ -30,9 +39,11 @@ const tvIntervals: Record<string, string> = {
 export default function TradingViewChart({
   symbol,
   timeframe,
+  focus=false,
 }: {
   symbol: SymbolKey;
   timeframe: string;
+  focus?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const widgetSymbol = chartSymbols[symbol];
@@ -110,7 +121,7 @@ export default function TradingViewChart({
   }, [widgetSymbol, interval]);
 
   return (
-    <div className="relative h-[365px] w-full md:h-[400px] 2xl:h-[410px]">
+    <div className={focus?"relative h-[min(74vh,860px)] min-h-[450px] w-full":"relative h-[365px] w-full md:h-[400px] 2xl:h-[410px]"}>
       <div ref={hostRef} className="absolute inset-0" aria-label={"TradingView chart " + widgetSymbol}/>
       <noscript>JavaScript is required to display the TradingView chart.</noscript>
     </div>
