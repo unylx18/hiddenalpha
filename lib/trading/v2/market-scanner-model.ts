@@ -2,7 +2,7 @@
  * Read-only normalization for the V2 market scanner and per-symbol multi-timeframe checks.
  * Context score is an engine indicator, NOT a probability, return forecast or trade order.
  */
-import {CRYPTO_SYMBOLS,type CryptoSymbol} from "./symbol-registry";
+import {CRYPTO_SYMBOLS,type CryptoSymbol} from "./symbol-registry.ts";
 
 export type ScanFrame="15m"|"1h"|"4h";
 export const SCAN_FRAMES:readonly ScanFrame[]=["15m","1h","4h"];

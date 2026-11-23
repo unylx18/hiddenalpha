@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, Menu, Search, Wrench } from "lucide-react";
-import { instruments, timeframes, panel, type Market, type SymbolKey } from "./instruments";
+import { ArrowUpRight, Check, Menu, Search, Wrench, Maximize2, Minimize2 } from "lucide-react";
+import { instruments, order, timeframes, panel, type Market, type SymbolKey } from "./instruments";
 import { Mark, AssetBadge } from "./brand";
 import LiveMarketQuote from "./live-market-quote";
 import TradingViewChart from "./tradingview-chart";
@@ -14,6 +14,8 @@ import TopMarketStrip from "./top-market-strip";
 import MarketWatchlist from "./market-watchlist";
 import { useMarketWatch } from "./use-market-watch";
 import { TerminalSidebar, MobileTerminalNav } from "./terminal-navigation";
+import {TERMINAL_PREFS_KEY,parseTerminalPrefs} from "@/lib/trading/v2/terminal-preferences";
+import {decodeScannerChartLink} from "@/lib/trading/v2/market-scanner-model";
 
 type AnalysisState = {
   key: string;
@@ -75,17 +77,60 @@ export default function TradingTerminal() {
   const [query, setQuery] = useState("");
   const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null);
   const [mobileMenuOpen,setMobileMenuOpen]=useState(false);
+  const [focusMode,setFocusMode]=useState(false);
+  const [suggestionIndex,setSuggestionIndex]=useState(0);
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [prefsReady,setPrefsReady]=useState(false);
   const closeMobileMenu=useCallback(()=>setMobileMenuOpen(false),[]);
   const watch=useMarketWatch();
   const controller = useRef<AbortController | null>(null);
+  const searchRef=useRef<HTMLInputElement>(null);
   const selected = instruments[symbol];
   const analysisKey = symbol + ":" + timeframe;
   const state = analysisState?.key === analysisKey ? analysisState : null;
   const analysis = state?.data ?? null;
   const oldData = state?.stale ?? false;
   const crypto = market === "crypto";
+  const matches=query.trim()?order.filter(id=>id.toLowerCase().includes(query.trim().toLowerCase())||
+    instruments[id].name.toLowerCase().includes(query.trim().toLowerCase())).slice(0,9):[];
 
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(()=>{
+    const timer=window.setTimeout(()=>{
+      let saved=null;
+      try{saved=parseTerminalPrefs(window.localStorage.getItem(TERMINAL_PREFS_KEY));}catch{}
+      const deep=decodeScannerChartLink(window.location.search);
+      const next=deep??saved;
+      if(next){
+        setSymbol(next.symbol);
+        setTimeframe(next.timeframe);
+        setMarket(instruments[next.symbol].market);
+      }
+      setPrefsReady(true);
+    },0);
+    return ()=>window.clearTimeout(timer);
+  },[]);
+  useEffect(()=>{
+    if(!prefsReady)return;
+    try{window.localStorage.setItem(TERMINAL_PREFS_KEY,JSON.stringify({symbol,timeframe}));}catch{}
+  },[prefsReady,symbol,timeframe]);
+  useEffect(()=>{
+    function keyboard(e:KeyboardEvent){
+      if(e.defaultPrevented||e.altKey||document.querySelector('[role="dialog"]'))return;
+      const el=e.target instanceof HTMLElement?e.target:null;
+      const typing=el&&(el.isContentEditable||["INPUT","TEXTAREA","SELECT"].includes(el.tagName));
+      const cmd=(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k";
+      if(cmd||(e.key==="/"&&!typing&&!e.metaKey&&!e.ctrlKey)){
+        e.preventDefault();searchRef.current?.focus();setSearchOpen(true);
+      }else if(e.key.toLowerCase()==="f"&&!typing&&!e.metaKey&&!e.ctrlKey){
+        e.preventDefault();setFocusMode(previous=>!previous);
+      }else if(e.key==="Escape"&&focusMode&&document.activeElement!==searchRef.current){
+        setFocusMode(false);
+      }
+    }
+    window.addEventListener("keydown",keyboard);
+    return ()=>window.removeEventListener("keydown",keyboard);
+  },[focusMode]);
 
   useEffect(() => {
     if (!analysisState?.data || analysisState.stale) return;
@@ -109,6 +154,9 @@ export default function TradingTerminal() {
     controller.current?.abort();
     setSymbol(id);
     setMarket(instruments[id].market);
+    setQuery("");
+    setSearchOpen(false);
+    setSuggestionIndex(0);
   }
 
   function selectMarket(next: Market) {
@@ -162,7 +210,7 @@ export default function TradingTerminal() {
       <div className="flex min-h-screen">
         <TerminalSidebar/>
         <main className="min-w-0 flex-1">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#133e53] px-4 py-3 lg:px-5">
+          <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[#133e53] bg-[#041522]/95 px-4 py-3 backdrop-blur-xl lg:px-5">
             <div className="flex items-center gap-2 lg:hidden">
               <button type="button" aria-label="Open Hidden Alpha navigation"
                 aria-expanded={mobileMenuOpen} aria-controls="hiddenalpha-v2-mobile-drawer"
@@ -181,26 +229,47 @@ export default function TradingTerminal() {
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex rounded-lg border border-[#19546b] bg-[#061927] p-1">
                 {(["crypto","forex"] as Market[]).map(type =>
-                  <button type="button" key={type} onClick={()=>selectMarket(type)}
+                  <button type="button" key={type} aria-pressed={market===type} onClick={()=>selectMarket(type)}
                     className={"rounded-md px-5 py-2 text-[12px] font-bold " +
                       (market === type ? "bg-[#075f82] text-white shadow-[0_0_12px_#00bdfb40]" : "text-[#88abbc]")}>
                     {type === "crypto" ? "₿ Crypto" : "◈ Forex / Gold"}
                   </button>)}
               </div>
-              <div className="flex items-center gap-2 rounded-lg border border-[#1a4f64] bg-[#071c2b] px-3 py-2">
-                <Search size={15} className="text-[#86aec1]"/>
-                <input value={query} onChange={event=>setQuery(event.target.value)}
-                  aria-label="Search symbols" placeholder="Search symbol"
+              <div className="relative flex items-center gap-2 rounded-lg border border-[#1a4f64] bg-[#071c2b] px-3 py-2">
+                <Search size={15} className="shrink-0 text-[#86aec1]"/>
+                <input ref={searchRef} value={query} onFocus={()=>setSearchOpen(true)}
+                  onChange={event=>{setQuery(event.target.value);setSuggestionIndex(0);setSearchOpen(true);}}
+                  onKeyDown={event=>{
+                    if(event.key==="Escape"){setQuery("");setSearchOpen(false);searchRef.current?.blur();}
+                    else if(event.key==="ArrowDown"){event.preventDefault();setSuggestionIndex(i=>Math.min(i+1,Math.max(0,matches.length-1)));}
+                    else if(event.key==="ArrowUp"){event.preventDefault();setSuggestionIndex(i=>Math.max(0,i-1));}
+                    else if(event.key==="Enter"&&matches.length){event.preventDefault();selectSymbol(matches[suggestionIndex]??matches[0]);}
+                  }}
+                  aria-label="Search symbols" aria-keyshortcuts="Meta+K Control+K /"
+                  aria-expanded={searchOpen&&matches.length>0} aria-controls="v2-search-results"
+                  placeholder="Search symbol"
                   className="w-32 bg-transparent text-[12px] outline-none placeholder:text-[#7195a7] sm:w-44"/>
+                <kbd className="hidden rounded border border-[#265971] px-1 text-[9px] text-[#88acbd] sm:inline">⌘K</kbd>
+                {searchOpen&&query.trim()&&<div id="v2-search-results" role="listbox"
+                  className="absolute left-0 top-full z-50 mt-1 max-h-64 w-[min(88vw,310px)] overflow-y-auto rounded-lg border border-[#2784a4] bg-[#061c2c] p-1 shadow-2xl">
+                  {matches.length?matches.map((id,i)=><button key={id} role="option"
+                    aria-selected={i===suggestionIndex} type="button"
+                    onMouseDown={event=>event.preventDefault()}
+                    onClick={()=>selectSymbol(id)}
+                    className={"flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[11px] "+(i===suggestionIndex?"bg-[#0e4f69]":"hover:bg-[#103d52]")}>
+                    <AssetBadge id={id} small/><span className="flex-1 font-bold">{id}</span>
+                    <span className="text-[9px] text-[#83aabd]">{instruments[id].market}</span>
+                  </button>):<p className="px-3 py-3 text-[11px] text-[#8daeba]">No matching markets</p>}
+                </div>}
               </div>
               <div className="ml-auto flex flex-wrap gap-1 rounded-lg border border-[#195069] bg-[#061a28] p-1">
-                {timeframes.map(tf=><button type="button" key={tf} onClick={()=>{controller.current?.abort();setTimeframe(tf);}}
+                {timeframes.map(tf=><button type="button" key={tf} aria-pressed={timeframe===tf} onClick={()=>{controller.current?.abort();setTimeframe(tf);}}
                   className={"rounded px-2 py-1 text-[11px] " +
                     (timeframe === tf ? "bg-[#08658b] text-white ring-1 ring-[#16aee0]" : "text-[#8cabbc]")}>{tf.toUpperCase()}</button>)}
               </div>
             </div>
 
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.85fr)_minmax(300px,.75fr)]">
+            <div className={focusMode?"grid gap-3":"grid gap-3 xl:grid-cols-[minmax(0,1.85fr)_minmax(300px,.75fr)]"}>
               <section className={panel + " overflow-hidden p-3"}>
                 <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-3">
                   <div className="flex items-center gap-3">
@@ -210,15 +279,21 @@ export default function TradingTerminal() {
                     </div>
                   </div>
                   <LiveMarketQuote symbol={symbol}/>
+                  <button type="button" onClick={()=>setFocusMode(v=>!v)}
+                    aria-pressed={focusMode} aria-label={focusMode?"Exit chart focus mode":"Enter chart focus mode"}
+                    title="Focus chart (F)"
+                    className="rounded-md border border-[#23657f] p-2 text-[#91d4e9] hover:bg-[#0c3b52]">
+                    {focusMode?<Minimize2 size={16}/>:<Maximize2 size={16}/>}
+                  </button>
                 </div>
-                <TradingViewChart symbol={symbol} timeframe={timeframe}/>
+                <TradingViewChart symbol={symbol} timeframe={timeframe} focus={focusMode}/>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-[#89adbe]">
                   <Check size={13} className="text-[#14d7a4]"/> Chart is hosted by TradingView; Hidden Alpha does not download or store its candles.
                   <span className="ml-auto text-[#6896ab]">No local candle sync</span>
                 </div>
               </section>
 
-              <AlphaDecisionBrief
+              {!focusMode&&<AlphaDecisionBrief
                 alpha={analysis}
                 stale={oldData}
                 loading={state?.loading===true}
@@ -227,17 +302,17 @@ export default function TradingTerminal() {
                 timeframe={timeframe}
                 crypto={crypto}
                 onAnalyze={analyze}
-              />
+              />}
             </div>
 
-            <AlphaInsightsGrid
+            {!focusMode&&<AlphaInsightsGrid
               alpha={analysis}
               stale={oldData}
               symbol={symbol}
               crypto={crypto}
-            />
+            />}
 
-            <div className="grid gap-3 xl:grid-cols-3">
+            {!focusMode&&<div className="grid gap-3 xl:grid-cols-3">
               <DashboardLocalSummary/>
               <MarketWatchlist
                 watch={watch}
@@ -245,7 +320,7 @@ export default function TradingTerminal() {
                 onSelect={selectSymbol}
                 query={query}
               />
-            </div>
+            </div>}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#123c51] pt-3 text-[10px] text-[#759cae]">
               <div>TradingView hosts the chart. Alpha Engine fetches Bybit/OANDA candles on demand. Neither flow writes candles to Supabase.</div>
               <div className="flex flex-wrap gap-3">

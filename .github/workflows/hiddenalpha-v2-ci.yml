@@ -29,7 +29,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: V2 pure model regression
-        run: node --test scripts/v2-risk.test.mjs scripts/v2-journal.test.mjs scripts/v2-portfolio.test.mjs scripts/v2-levels.test.mjs scripts/v2-watch.test.mjs scripts/v2-market-scanner.test.mjs
+        run: node --test scripts/v2-risk.test.mjs scripts/v2-journal.test.mjs scripts/v2-portfolio.test.mjs scripts/v2-levels.test.mjs scripts/v2-watch.test.mjs scripts/v2-market-scanner.test.mjs scripts/v2-preferences.test.mjs
       - name: V2 scoped ESLint
         run: npx eslint app/v2 app/api/v2 components/v2 lib/trading/v2 lib/market-data/oanda-candles.ts scripts/v2-smoke.mjs
       - name: TypeScript
