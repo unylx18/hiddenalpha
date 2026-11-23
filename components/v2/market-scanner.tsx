@@ -249,7 +249,7 @@ export default function MarketScanner(){
             </div>}
             {completedAt>0&&<p className="mt-2 text-[10px] text-[#81a6b7]">
               Last scan completed: {new Date(completedAt).toLocaleTimeString()} · Results expire with their completed-candle freshness window.
-            </p>
+            </p>}
           </section>
           <section className={panel+" p-4"}>
             <div className="mb-2 flex items-center justify-between">
@@ -276,7 +276,7 @@ export default function MarketScanner(){
                 </Link>
               </div>)}
               {phase==="running"&&<p className="py-4 text-center text-[11px] text-[#9ebbc9]">Scanning remaining markets...</p>}
-              {phase!=="running"&&!displayed.length&&<p className="py-8 text-center text-[11px] text-[#9ebbc9]">No fresh verified markets match this filter. Run a new scan if snapshots expired.</p>
+              {phase!=="running"&&!displayed.length&&<p className="py-8 text-center text-[11px] text-[#9ebbc9]">No fresh verified markets match this filter. Run a new scan if snapshots expired.</p>}
             </div>}
             {chosen&&<AlignmentCheck key={chosen.symbol+":"+chosen.timeframe+":"+chosen.lastClosedAt} primary={chosen}/>}
             {unavailable.length>0&&<p className="mt-3 rounded-lg border border-[#6a4855] bg-[#241c2a] p-2 text-[10px] text-[#e0aebd]">
