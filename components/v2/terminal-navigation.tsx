@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import {usePathname} from "next/navigation";
 import { useEffect, useRef } from "react";
 import {
-  BarChart3, BookOpen, BrainCircuit, FlaskConical, Home, PlugZap,
+  BarChart3, BookOpen, BrainCircuit, FlaskConical, Home, PlugZap, Radar,
   ShieldCheck, Wallet, X,
 } from "lucide-react";
 import { Mark } from "./brand";
 
 const links=[
   {name:"Dashboard",href:"/v2",icon:Home,legacy:false},
+  {name:"Market Scanner",href:"/v2/scanner",icon:Radar,legacy:false},
   {name:"Market Desk",href:"/markets",icon:BarChart3,legacy:true},
   {name:"AI Analysis",href:"/scanner",icon:BrainCircuit,legacy:true},
   {name:"Trading Journal",href:"/v2/journal",icon:BookOpen,legacy:false},
@@ -20,12 +22,13 @@ const links=[
 ] as const;
 
 function MenuLinks({onNavigate}:{onNavigate?:()=>void}) {
+  const route=usePathname();
   return <nav aria-label="Hidden Alpha navigation" className="space-y-1">
     {links.map(({name,href,icon:Icon,legacy})=>
       <Link key={name} href={href} onClick={onNavigate}
-        aria-current={href==="/v2"?"page":undefined}
+        aria-current={route===href?"page":undefined}
         className={"flex items-center gap-3 rounded-lg border px-3 py-3 text-[12px] font-semibold transition focus-visible:outline-2 focus-visible:outline-[#20d1f2] "+
-          (href==="/v2"?"border-[#17b8ed] bg-[#0a4563] text-[#f2fdff] shadow-[0_0_16px_rgba(0,185,244,.13)]":
+          (route===href?"border-[#17b8ed] bg-[#0a4563] text-[#f2fdff] shadow-[0_0_16px_rgba(0,185,244,.13)]":
             "border-transparent text-[#96b9ca] hover:border-[#245b72] hover:bg-[#10364c]")}>
         <Icon size={17} className="shrink-0"/>
         <span className="flex-1">{name}</span>
