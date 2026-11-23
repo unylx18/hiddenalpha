@@ -6,7 +6,8 @@ import {ArrowUpRight,Menu,Radar,RefreshCcw,ShieldCheck} from "lucide-react";
 import {CRYPTO_SYMBOLS,type CryptoSymbol} from "@/lib/trading/v2/symbol-registry";
 import {
   SCAN_FRAMES,deriveMtfVerdict,filterSortScans,mapWithConcurrency,
-  parseScannerResponse,type ScanFilter,type ScanFrame,type ScanSort,type VerifiedScan,
+  parseScannerResponse,isScannerResultFresh,matchesScanCondition,
+  type ScanFilter,type ScanFrame,type ScanSort,type ScanCondition,type VerifiedScan,
 } from "@/lib/trading/v2/market-scanner-model";
 import {AssetBadge,Mark} from "./brand";
 import {instruments,panel} from "./instruments";
@@ -96,6 +97,9 @@ export default function MarketScanner(){
   const [frame,setFrame]=useState<ScanFrame>("15m");
   const [filter,setFilter]=useState<ScanFilter>("ALL");
   const [sort,setSort]=useState<ScanSort>("absolute");
+  const [condition,setCondition]=useState<ScanCondition>("ANY");
+  const [clock,setClock]=useState(0);
+  const [completedAt,setCompletedAt]=useState(0);
   const [outcomes,setOutcomes]=useState<Results>({});
   const [phase,setPhase]=useState<ScanPhase>("idle");
   const [progress,setProgress]=useState(0);
@@ -105,10 +109,18 @@ export default function MarketScanner(){
   const ctrl=useRef<AbortController|null>(null);
   const lastStart=useRef(0);
   useEffect(()=>()=>ctrl.current?.abort(),[]);
-  const successful=useMemo(()=>CRYPTO_SYMBOLS.flatMap(symbol=>{
+  useEffect(()=>{
+    if(phase==="idle")return;
+    const timer=window.setInterval(()=>setClock(Date.now()),30_000);
+    return ()=>window.clearInterval(timer);
+  },[phase]);
+  const allReady=useMemo(()=>CRYPTO_SYMBOLS.flatMap(symbol=>{
     const row=outcomes[symbol];return row?.kind==="ready"?[row.data]:[];
   }),[outcomes]);
-  const displayed=useMemo(()=>filterSortScans(successful,filter,sort),[successful,filter,sort]);
+  const successful=useMemo(()=>allReady.filter(row=>isScannerResultFresh(row,clock)),[allReady,clock]);
+  const staleCount=allReady.length-successful.length;
+  const confluenceCount=successful.filter(row=>matchesScanCondition(row,"TREND_MOMENTUM")).length;
+  const displayed=useMemo(()=>filterSortScans(successful,filter,sort,condition),[successful,filter,sort,condition]);
   const unavailable=CRYPTO_SYMBOLS.filter(id=>outcomes[id]?.kind==="unavailable");
   const chosen=successful.find(x=>x.symbol===selected);
   function cancel(){
@@ -118,7 +130,7 @@ export default function MarketScanner(){
   }
   function changeFrame(tf:ScanFrame){
     ctrl.current?.abort();ctrl.current=null;
-    setFrame(tf);setOutcomes({});setProgress(0);
+    setFrame(tf);setOutcomes({});setProgress(0);setCompletedAt(0);
     setPhase("idle");setSelected(null);setMessage("");
   }
   async function start(){
@@ -129,7 +141,7 @@ export default function MarketScanner(){
     lastStart.current=Date.now();
     const controller=new AbortController();
     ctrl.current=controller;
-    setOutcomes({});setProgress(0);setSelected(null);
+    setOutcomes({});setProgress(0);setSelected(null);setCompletedAt(0);setClock(Date.now());
     setPhase("running");setMessage("");
     let done=0;
     try{
@@ -138,7 +150,10 @@ export default function MarketScanner(){
         try{
           const res=await fetch("/api/v2/analysis?"+new URLSearchParams({
             symbol,timeframe:frame,
-          }).toString(),{cache:"no-store",signal:controller.signal});
+          }).toString(),{
+            cache:"no-store",
+            signal:AbortSignal.any([controller.signal,AbortSignal.timeout(14_000)]),
+          });
           if(res.ok){
             const body:unknown=await res.json();
             const data=parseScannerResponse(body,symbol,frame,Date.now());
@@ -149,10 +164,18 @@ export default function MarketScanner(){
         done++;
         setOutcomes(previous=>({...previous,[symbol]:outcome}));
         setProgress(done);
+        setClock(Date.now());
       },controller.signal);
-      if(!controller.signal.aborted){setPhase("complete");setMessage("Scan finished. Missing markets are excluded from rankings.");}
+      if(!controller.signal.aborted){
+        setCompletedAt(Date.now());setClock(Date.now());
+        setPhase("complete");
+        setMessage("Scan finished. Only verified, non-expired markets appear in rankings.");
+      }
     }catch{
-      if(!controller.signal.aborted){setPhase("complete");setMessage("Some markets could not be checked.");}
+      if(!controller.signal.aborted){
+        setCompletedAt(Date.now());setClock(Date.now());
+        setPhase("complete");setMessage("Some markets could not be checked.");
+      }
     }finally{
       if(ctrl.current===controller)ctrl.current=null;
     }
@@ -202,9 +225,31 @@ export default function MarketScanner(){
                   <option value="symbol">Symbol A-Z</option>
                 </select>
               </label>
-              <span className="ml-auto text-[10px] text-[#85a7b9]">{progress}/{CRYPTO_SYMBOLS.length} checked · {successful.length} verified</span>
+              <label className="text-[10px] text-[#96b9ca]">Context
+                <select value={condition} onChange={e=>setCondition(e.target.value as ScanCondition)}
+                  className="ml-2 max-w-[180px] rounded border border-[#27586f] bg-[#071b2d] px-2 py-1.5 text-[#d2edf9]">
+                  <option value="ANY">All contexts</option>
+                  <option value="TREND_MOMENTUM">Trend + momentum aligned</option>
+                  <option value="VOLUME_1X">Relative volume ≥ 1×</option>
+                </select>
+              </label>
+              <span className="ml-auto text-[10px] text-[#85a7b9]">{progress}/{CRYPTO_SYMBOLS.length} checked · {successful.length} fresh verified</span>
             </div>
             {message&&<p role="status" className="mt-2 text-[11px] text-[#b3d2df]">{message}</p>}
+            {progress>0&&<div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
+              <div className="rounded border border-[#215068] bg-[#082638] px-3 py-2 text-[#9fc8da]">
+                Verified <strong className="block text-[16px] text-[#e8f8ff]">{successful.length}</strong>
+              </div>
+              <div className="rounded border border-[#215068] bg-[#082638] px-3 py-2 text-[#9fc8da]">
+                Trend + momentum aligned <strong className="block text-[16px] text-[#e8f8ff]">{confluenceCount}</strong>
+              </div>
+              <div className="rounded border border-[#215068] bg-[#082638] px-3 py-2 text-[#9fc8da]">
+                Stale / unavailable <strong className="block text-[16px] text-[#e8f8ff]">{staleCount+unavailable.length}</strong>
+              </div>
+            </div>}
+            {completedAt>0&&<p className="mt-2 text-[10px] text-[#81a6b7]">
+              Last scan completed: {new Date(completedAt).toLocaleTimeString()} · Results expire with their completed-candle freshness window.
+            </p>
           </section>
           <section className={panel+" p-4"}>
             <div className="mb-2 flex items-center justify-between">
@@ -231,16 +276,17 @@ export default function MarketScanner(){
                 </Link>
               </div>)}
               {phase==="running"&&<p className="py-4 text-center text-[11px] text-[#9ebbc9]">Scanning remaining markets...</p>}
-              {phase!=="running"&&!displayed.length&&<p className="py-8 text-center text-[11px] text-[#9ebbc9]">No verified markets match this filter.</p>}
+              {phase!=="running"&&!displayed.length&&<p className="py-8 text-center text-[11px] text-[#9ebbc9]">No fresh verified markets match this filter. Run a new scan if snapshots expired.</p>
             </div>}
-            {chosen&&<AlignmentCheck key={chosen.symbol+":"+chosen.timeframe} primary={chosen}/>}
+            {chosen&&<AlignmentCheck key={chosen.symbol+":"+chosen.timeframe+":"+chosen.lastClosedAt} primary={chosen}/>}
             {unavailable.length>0&&<p className="mt-3 rounded-lg border border-[#6a4855] bg-[#241c2a] p-2 text-[10px] text-[#e0aebd]">
               Unavailable/unverified: {unavailable.join(", ")}. No market bias was inferred.
             </p>}
             <p className="mt-3 border-t border-[#1a465b] pt-3 text-[10px] leading-5 text-[#83a9ba]">
               Context score (−100…+100) is an engine diagnostic, not win probability.
               MTF alignment only compares verified 15m/1H/4H results; it is not financial advice or an execution signal.
-              Manual scanner uses up to 3 concurrent Bybit requests, at most once per minute per tab.
+              Trend + momentum alignment is descriptive context, not a trade recommendation.
+              Results expire automatically. Manual scanner uses up to 3 concurrent Bybit requests, at most once per minute per tab.
             </p>
           </section>
           <Link href="/v2" className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#26c5ee]">Back to Trading Terminal <ArrowUpRight size={12}/></Link>
