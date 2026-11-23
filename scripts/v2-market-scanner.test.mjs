@@ -3,7 +3,7 @@ import test from "node:test";
 import {CRYPTO_SYMBOLS} from "../lib/trading/v2/symbol-registry.ts";
 import {
   parseScannerResponse,filterSortScans,decodeScannerChartLink,
-  mapWithConcurrency,deriveMtfVerdict,
+  mapWithConcurrency,deriveMtfVerdict,isScannerResultFresh,matchesScanCondition,
 } from "../lib/trading/v2/market-scanner-model.ts";
 const now=Date.parse("2026-11-20T07:00:30Z");
 const sample=(symbol="BTCUSDT",timeframe="15m",bias="BULLISH",score=54)=>({
@@ -11,7 +11,7 @@ const sample=(symbol="BTCUSDT",timeframe="15m",bias="BULLISH",score=54)=>({
   marketType:"crypto",volumeKind:"traded_contracts",candleCount:300,
   lastClosedAt:"2026-11-20T07:00:00.000Z",
   alpha:{symbol,timeframe,market:{bias,score,confidence:72},
-    trend:{direction:"UP"},momentum:{direction:"UP"},
+    trend:{direction:bias},momentum:{direction:bias},
     volatility:{level:"NORMAL"},volume:{ratio:1.7}},
 });
 test("scanner validates genuine closed-candle context",()=>{
@@ -61,4 +61,35 @@ test("MTF requires 3 different frames, same symbol and common directional bias",
   assert.equal(deriveMtfVerdict("BTCUSDT",[
     rows[0],{...rows[1],bias:"NEUTRAL"},rows[2],
   ]),"MIXED / NO TRADE");
+});
+
+test("source enum validation rejects unrecognized trend, momentum and volatility",()=>{
+  assert.equal(parseScannerResponse({
+    ...sample(),alpha:{...sample().alpha,trend:{direction:"UNKNOWN"}},
+  },"BTCUSDT","15m",now),null);
+  assert.equal(parseScannerResponse({
+    ...sample(),alpha:{...sample().alpha,momentum:{direction:"BUY NOW"}},
+  },"BTCUSDT","15m",now),null);
+  assert.equal(parseScannerResponse({
+    ...sample(),alpha:{...sample().alpha,volatility:{level:"EXTREME"}},
+  },"BTCUSDT","15m",now),null);
+});
+test("freshness expires and never displays future or invalid scanner candles",()=>{
+  const row=parseScannerResponse(sample(),"BTCUSDT","15m",now);
+  assert.equal(isScannerResultFresh(row,now),true);
+  assert.equal(isScannerResultFresh(row,now+2_000_000),false);
+  assert.equal(isScannerResultFresh(row,now-70_000),false);
+});
+test("context filters need real trend+momentum agreement, never just a score",()=>{
+  const bullish=parseScannerResponse(sample("BTCUSDT","15m","BULLISH",40),"BTCUSDT","15m",now);
+  const bearish=parseScannerResponse(sample("ETHUSDT","15m","BEARISH",-42),"ETHUSDT","15m",now);
+  const mixed={...bullish,momentum:"NEUTRAL",relativeVolume:0.6};
+  assert.equal(matchesScanCondition(bullish,"TREND_MOMENTUM"),true);
+  assert.equal(matchesScanCondition(mixed,"TREND_MOMENTUM"),false);
+  assert.equal(matchesScanCondition(mixed,"VOLUME_1X"),false);
+  assert.equal(matchesScanCondition(bullish,"VOLUME_1X"),true);
+  assert.deepEqual(
+    filterSortScans([mixed,bearish],"ALL","absolute","TREND_MOMENTUM").map(x=>x.symbol),
+    ["ETHUSDT"],
+  );
 });
