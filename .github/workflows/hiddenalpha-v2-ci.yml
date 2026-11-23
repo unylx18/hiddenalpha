@@ -56,6 +56,10 @@ jobs:
             }
           }
           NODE
+      - name: Block known runtime dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=low
+      - name: Block moderate-or-worse dependency vulnerabilities
+        run: npm audit --audit-level=moderate
       - name: V2 pure model regression
         run: node --test scripts/v2-risk.test.mjs scripts/v2-journal.test.mjs scripts/v2-portfolio.test.mjs scripts/v2-levels.test.mjs scripts/v2-watch.test.mjs scripts/v2-market-scanner.test.mjs scripts/v2-preferences.test.mjs scripts/v2-onboarding.test.mjs
       - name: V2 scoped ESLint
@@ -67,36 +71,3 @@ jobs:
       - name: Built-server HTTP route smoke
         run: node scripts/v2-http-smoke.mjs
 
-  lockfile-security-refresh:
-    # Temporary guarded one-time lockfile refresh. Removed once audited/committed.
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/hiddenalpha-v2-visual-terminal' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Regenerate lock safely (no lifecycle scripts)
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          npm audit fix --package-lock-only --ignore-scripts --no-fund || true
-          git diff --exit-code -- package.json
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm audit --omit=dev --audit-level=low
-      - name: Commit only audited package-lock.json to V2 feature branch
-        run: |
-          git add package-lock.json
-          if git diff --cached --quiet; then
-            echo 'Lockfile already updated'; exit 0
-          fi
-          git config user.name 'hiddenalpha-security-ci'
-          git config user.email 'security-ci@users.noreply.github.com'
-          git commit -m 'fix(deps): update lockfile to patched runtime dependency versions'
-          git push origin HEAD:refs/heads/feat/hiddenalpha-v2-visual-terminal
