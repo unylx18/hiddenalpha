@@ -246,6 +246,7 @@ export default function TradingTerminal() {
                     else if(event.key==="Enter"&&matches.length){event.preventDefault();selectSymbol(matches[suggestionIndex]??matches[0]);}
                   }}
                   aria-label="Search symbols" aria-keyshortcuts="Meta+K Control+K /"
+                  role="combobox" aria-autocomplete="list"
                   aria-expanded={searchOpen&&matches.length>0} aria-controls="v2-search-results"
                   placeholder="Search symbol"
                   className="w-32 bg-transparent text-[12px] outline-none placeholder:text-[#7195a7] sm:w-44"/>

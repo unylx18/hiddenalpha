@@ -23,12 +23,18 @@ function AlignmentCheck({primary}:{primary:VerifiedScan}){
   const [result,setResult]=useState<VerifiedScan[]|null>(null);
   const [error,setError]=useState(false);
   const [checkedAt,setCheckedAt]=useState(0);
+  const [clock,setClock]=useState(0);
   const active=useRef<AbortController|null>(null);
   useEffect(()=>()=>active.current?.abort(),[]);
+  useEffect(()=>{
+    if(!result)return;
+    const timer=window.setInterval(()=>setClock(Date.now()),30_000);
+    return ()=>window.clearInterval(timer);
+  },[result]);
   const fresh=result&&result.every(row=>{
     const closed=Date.parse(row.lastClosedAt);
     const ms=row.timeframe==="15m"?900_000:row.timeframe==="1h"?3_600_000:14_400_000;
-    return Number.isFinite(closed)&&Date.now()-closed<=Math.max(ms*2,120_000);
+    return Number.isFinite(closed)&&clock-closed<=Math.max(ms*2,120_000);
   });
   const verdict=result&&fresh?deriveMtfVerdict(primary.symbol,result):"UNAVAILABLE";
   async function verify(){
@@ -52,6 +58,7 @@ function AlignmentCheck({primary}:{primary:VerifiedScan}){
     setResult(all);
     setError(all.length!==3);
     setCheckedAt(Date.now());
+    setClock(Date.now());
     setPending(false);
   }
   return <div className="mt-3 rounded-xl border border-[#23708b] bg-[#09283b] p-4">
