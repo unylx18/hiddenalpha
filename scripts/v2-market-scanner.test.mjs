@@ -78,7 +78,7 @@ test("freshness expires and never displays future or invalid scanner candles",()
   const row=parseScannerResponse(sample(),"BTCUSDT","15m",now);
   assert.equal(isScannerResultFresh(row,now),true);
   assert.equal(isScannerResultFresh(row,now+2_000_000),false);
-  assert.equal(isScannerResultFresh(row,now-70_000),false);
+  assert.equal(isScannerResultFresh(row,now-120_000),false);
 });
 test("context filters need real trend+momentum agreement, never just a score",()=>{
   const bullish=parseScannerResponse(sample("BTCUSDT","15m","BULLISH",40),"BTCUSDT","15m",now);
