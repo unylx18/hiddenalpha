@@ -28,6 +28,34 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Dependency audit inventory (read-only, informational)
+        run: |
+          npm audit --json > /tmp/hiddenalpha-audit-all.json || true
+          npm audit --omit=dev --json > /tmp/hiddenalpha-audit-runtime.json || true
+          node - <<'NODE'
+          const fs = require("node:fs");
+          for (const [kind,path] of [
+            ["ALL","/tmp/hiddenalpha-audit-all.json"],
+            ["RUNTIME","/tmp/hiddenalpha-audit-runtime.json"],
+          ]) {
+            try {
+              const doc = JSON.parse(fs.readFileSync(path,"utf8"));
+              if(doc.error) {console.log("AUDIT_ERROR",kind,JSON.stringify(doc.error));continue;}
+              console.log("AUDIT_TOTAL",kind,JSON.stringify(doc.metadata?.vulnerabilities??{}));
+              for(const [name,v] of Object.entries(doc.vulnerabilities??{})){
+                const via=(v.via??[]).filter(x=>typeof x==="object").map(x=>({
+                  name:x.name,severity:x.severity,title:x.title,range:x.range,url:x.url,
+                }));
+                console.log("AUDIT_FINDING",kind,JSON.stringify({
+                  name,severity:v.severity,range:v.range,isDirect:v.isDirect,
+                  fixAvailable:v.fixAvailable,via,effects:v.effects,
+                }));
+              }
+            } catch(error) {
+              console.log("AUDIT_READ_ERROR",kind,error.message);
+            }
+          }
+          NODE
       - name: V2 pure model regression
         run: node --test scripts/v2-risk.test.mjs scripts/v2-journal.test.mjs scripts/v2-portfolio.test.mjs scripts/v2-levels.test.mjs scripts/v2-watch.test.mjs scripts/v2-market-scanner.test.mjs scripts/v2-preferences.test.mjs scripts/v2-onboarding.test.mjs
       - name: V2 scoped ESLint
