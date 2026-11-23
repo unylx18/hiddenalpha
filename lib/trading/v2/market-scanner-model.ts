@@ -9,16 +9,17 @@ export const SCAN_FRAMES:readonly ScanFrame[]=["15m","1h","4h"];
 export type ScanBias="BULLISH"|"BEARISH"|"NEUTRAL";
 export type ScanFilter="ALL"|ScanBias;
 export type ScanSort="absolute"|"highest"|"symbol";
+export type ScanCondition="ANY"|"TREND_MOMENTUM"|"VOLUME_1X";
 export type VerifiedScan={
   symbol:CryptoSymbol;
   timeframe:ScanFrame;
   bias:ScanBias;
   score:number;
   confidence:number;
-  trend:string;
-  momentum:string;
+  trend:ScanBias;
+  momentum:ScanBias;
   relativeVolume:number;
-  volatility:string;
+  volatility:"LOW"|"NORMAL"|"HIGH";
   lastClosedAt:string;
   candleCount:number;
 };
@@ -31,9 +32,6 @@ function record(value:unknown):Record<string,unknown>|null{
 }
 function finite(value:unknown):value is number{
   return typeof value==="number"&&Number.isFinite(value);
-}
-function label(value:unknown):value is string{
-  return typeof value==="string"&&value.length>0&&value.length<=45;
 }
 export function isScannerSymbol(value:string):value is CryptoSymbol{
   return CRYPTO_SYMBOLS.some(id=>id===value);
@@ -54,21 +52,36 @@ export function parseScannerResponse(
      !["BULLISH","BEARISH","NEUTRAL"].includes(String(market.bias))||
      !finite(market.score)||market.score < -100||market.score>100||
      !finite(market.confidence)||market.confidence<0||market.confidence>100||
-     !label(trend.direction)||!label(momentum.direction)||!label(volatility.level)||
+     !["BULLISH","BEARISH","NEUTRAL"].includes(String(trend.direction))||
+     !["BULLISH","BEARISH","NEUTRAL"].includes(String(momentum.direction))||
+     !["LOW","NORMAL","HIGH"].includes(String(volatility.level))||
      !finite(volume.ratio)||volume.ratio<0||typeof data.lastClosedAt!=="string")return null;
   const closed=Date.parse(data.lastClosedAt);
   if(!Number.isFinite(closed)||closed>now+60_000||
      now-closed>Math.max(DURATIONS[timeframe]*2,120_000))return null;
   return {
     symbol,timeframe,bias:market.bias as ScanBias,score:market.score,
-    confidence:market.confidence,trend:trend.direction,
-    momentum:momentum.direction,relativeVolume:volume.ratio,
-    volatility:volatility.level,lastClosedAt:data.lastClosedAt,
+    confidence:market.confidence,trend:trend.direction as ScanBias,
+    momentum:momentum.direction as ScanBias,relativeVolume:volume.ratio,
+    volatility:volatility.level as "LOW"|"NORMAL"|"HIGH",lastClosedAt:data.lastClosedAt,
     candleCount:data.candleCount,
   };
 }
-export function filterSortScans(rows:readonly VerifiedScan[],filter:ScanFilter,sort:ScanSort){
-  return rows.filter(x=>filter==="ALL"||x.bias===filter)
+export function isScannerResultFresh(row:VerifiedScan,now:number):boolean{
+  const closed=Date.parse(row.lastClosedAt);
+  return Number.isFinite(now)&&Number.isFinite(closed)&&closed<=now+60_000&&
+    now-closed<=Math.max(DURATIONS[row.timeframe]*2,120_000);
+}
+export function matchesScanCondition(row:VerifiedScan,condition:ScanCondition):boolean{
+  if(condition==="ANY")return true;
+  if(condition==="VOLUME_1X")return row.relativeVolume>=1;
+  return row.bias!=="NEUTRAL"&&row.trend===row.bias&&row.momentum===row.bias;
+}
+export function filterSortScans(
+  rows:readonly VerifiedScan[],filter:ScanFilter,sort:ScanSort,
+  condition:ScanCondition="ANY",
+){
+  return rows.filter(x=>(filter==="ALL"||x.bias===filter)&&matchesScanCondition(x,condition))
     .sort((a,b)=>sort==="symbol"?a.symbol.localeCompare(b.symbol):
       sort==="highest"?b.score-a.score||a.symbol.localeCompare(b.symbol):
       Math.abs(b.score)-Math.abs(a.score)||a.symbol.localeCompare(b.symbol));
