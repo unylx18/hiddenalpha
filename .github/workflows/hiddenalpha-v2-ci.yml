@@ -36,3 +36,5 @@ jobs:
         run: npx tsc --noEmit
       - name: Next.js production build
         run: npm run build
+      - name: Built-server HTTP route smoke
+        run: node scripts/v2-http-smoke.mjs
