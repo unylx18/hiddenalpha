@@ -362,7 +362,7 @@ export default function TradingTerminal() {
         </main>
       </div>
       <MobileTerminalNav open={mobileMenuOpen} onClose={closeMobileMenu}/>
-      <FirstRunGuide open={tourOpen} onDismiss={dismissTour} onComplete={completeTour}/>
+      {tourOpen&&<FirstRunGuide open={true} onDismiss={dismissTour} onComplete={completeTour}/>}
     </div>
   );
 }
