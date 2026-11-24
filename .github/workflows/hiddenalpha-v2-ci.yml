@@ -72,8 +72,10 @@ jobs:
         run: node scripts/v2-http-smoke.mjs
       - name: Install isolated Playwright browser-test runner
         run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @playwright/test@1.65.1
-      - name: Install headless Chromium for E2E
-        run: npx playwright install --with-deps chromium
+      - name: Verify preinstalled Chrome browser
+        run: |
+          command -v google-chrome
+          google-chrome --version
       - name: Browser E2E - onboarding, navigation, chart and scanner
         run: npx playwright test --config=tests/e2e/playwright.config.mjs
 
