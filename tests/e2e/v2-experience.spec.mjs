@@ -83,12 +83,12 @@ test("new user completes 3-step tour once, and replay starts at step one",async(
   await page.waitForTimeout(550);
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  await page.getByRole("button",{name:"Quick tour"}).click();
+  await page.getByRole("button",{name:"Quick tour",exact:true}).click();
   await expect(page.getByRole("dialog",{name:"A clearer way to read the market."})).toBeVisible();
   await page.getByRole("button",{name:"Next"}).click();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button",{name:"Quick tour"}).click();
+  await page.getByRole("button",{name:"Quick tour",exact:true}).click();
   await expect(page.getByRole("dialog",{name:"A clearer way to read the market."})).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
@@ -177,7 +177,7 @@ test("mobile navigation and first-run tour remain usable at phone viewport",asyn
     await page.getByRole("dialog",{name:"Hidden Alpha navigation"}).getByRole("link",{name:"Dashboard"}).click();
     await expect(page).toHaveURL(/\/v2$/);
     await expect(page.getByRole("heading",{name:"Market Command Center."})).toBeVisible();
-    await page.getByRole("button",{name:"Quick tour"}).click();
+    await page.getByRole("button",{name:"Quick tour",exact:true}).click();
     await expect(page.getByRole("dialog",{name:"A clearer way to read the market."})).toBeVisible();
     await page.getByRole("button",{name:"Close onboarding"}).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
