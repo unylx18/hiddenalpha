@@ -1,6 +1,9 @@
+import { authorizeMutation } from "@/lib/security/authorize-mutation";
 import { updateSignalLifecycle } from "@/lib/trading/signal/lifecycle-service";
 
 export async function POST(request: Request) {
+  const denied = await authorizeMutation(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
 

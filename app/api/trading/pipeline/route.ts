@@ -1,3 +1,4 @@
+import { authorizeMutation } from "@/lib/security/authorize-mutation";
 import {
   NextRequest,
   NextResponse,
@@ -10,6 +11,8 @@ import {
 export async function POST(
   request: NextRequest
 ) {
+  const denied = await authorizeMutation(request);
+  if (denied) return denied;
   try {
     let body: Record<
       string,

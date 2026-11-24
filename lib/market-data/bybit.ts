@@ -13,7 +13,8 @@ export async function getBybitKlines(
   symbol: string,
   interval: string = "1",
   limit: number = 100,
-  endTime?: number
+  endTime?: number,
+  signal?: AbortSignal
 ): Promise<BybitKline[]> {
   const url = new URL(
     "/v5/market/kline",
@@ -39,6 +40,7 @@ export async function getBybitKlines(
     url.toString(),
     {
       cache: "no-store",
+      signal,
     }
   );
 
