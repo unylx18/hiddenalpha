@@ -1,4 +1,5 @@
 import {defineConfig} from "@playwright/test";
+import {fileURLToPath} from "node:url";
 
 const port=39322;
 const baseURL="http://127.0.0.1:"+port;
@@ -22,6 +23,7 @@ export default defineConfig({
     screenshot:"only-on-failure",
   },
   webServer:{
+    cwd:fileURLToPath(new URL("../../",import.meta.url)),
     command:"node node_modules/next/dist/bin/next start -p "+port+" -H 127.0.0.1",
     url:baseURL+"/v2",
     reuseExistingServer:!process.env.CI,
